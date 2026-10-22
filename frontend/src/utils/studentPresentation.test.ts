@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { getAssignmentBadge, getStudentInitials } from "./studentPresentation";
 
-describe("student presentation", () => {
-  it("uses Vietnamese name initials and a safe fallback", () => {
-    expect(getStudentInitials("  Đặng Thị Ánh ")).toBe("ĐÁ");
-    expect(getStudentInitials("Nguyễn")).toBe("N");
-    expect(getStudentInitials("  ")).toBe("HS");
-    expect(getStudentInitials("123")).toBe("HS");
-    expect(getStudentInitials(undefined)).toBe("HS");
+import {
+  assignmentContentError,
+  isImageUrl,
+  normalizeAssignmentContent,
+} from "./assignmentValidation";
+
+describe("student-facing assignment presentation", () => {
+  it("accepts HTTP images and rejects unsafe image protocols", () => {
+    expect(isImageUrl("https://example.com/map.png")).toBe(true);
+    expect(isImageUrl("javascript:alert(1)")).toBe(false);
   });
-  it("keeps assignment states distinct and readable", () => {
-    expect(getAssignmentBadge("submitted")).toEqual({ label: "Đã nộp", tone: "info" });
-    expect(getAssignmentBadge("graded")).toEqual({ label: "Đã chấm", tone: "success" });
-    expect(getAssignmentBadge("expired")).toEqual({ label: "Hết hạn", tone: "warning" });
-    expect(getAssignmentBadge("draft_error").label).toBe("Nháp cần kiểm tra");
+
+  it("validates YouTube media and removes an empty content block", () => {
+    expect(assignmentContentError({ text: "", imageUrl: "", videoUrl: "not-a-video" }))
+      .toBe("Liên kết video YouTube không hợp lệ.");
+    expect(normalizeAssignmentContent({ text: " ", imageUrl: " ", videoUrl: " " }))
+      .toBeUndefined();
   });
 });
