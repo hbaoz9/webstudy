@@ -2,8 +2,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Archive, Plus, School, Users } from "lucide-react";
-import StudentStatusBadge from "../../components/student/StudentStatusBadge";
-import type { StudentBadgeTone } from "../../utils/studentPresentation";
 
 import {
   useStudentClassMemberships,
@@ -16,31 +14,31 @@ const statusMeta: Record<
   StudentClassStatus,
   {
     label: string;
-    tone: StudentBadgeTone;
+    className: string;
     description: string;
   }
 > = {
   joined: {
     label: "Đã tham gia",
-    tone: "success",
+    className: "bg-emerald/10 text-emerald",
     description: "Bạn đã là thành viên của lớp học.",
   },
 
   pending: {
     label: "Chờ giáo viên duyệt",
-    tone: "warning",
+    className: "bg-amber-50 text-amber-700",
     description: "Yêu cầu đang chờ giáo viên xử lý.",
   },
 
   rejected: {
     label: "Bị từ chối",
-    tone: "danger",
+    className: "bg-rose-50 text-rose-700",
     description: "Yêu cầu chưa được chấp nhận.",
   },
 
   needs_link: {
     label: "Cần kiểm tra",
-    tone: "info",
+    className: "bg-sky-50 text-sky-700",
     description:
       "Giáo viên đã duyệt nhưng tài khoản chưa liên kết với danh sách lớp. Vui lòng liên hệ giáo viên.",
   },
@@ -114,7 +112,7 @@ export default function StudentClassesPage() {
 
         <Link
           to="/student/join-class"
-          className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white transition hover:opacity-90"
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald px-5 py-3 text-sm font-bold text-white transition hover:opacity-90"
         >
           <Plus className="size-4" />
           Tham gia lớp mới
@@ -151,7 +149,7 @@ export default function StudentClassesPage() {
             onClick={() => setActiveFilter(filter.value)}
             className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               activeFilter === filter.value
-                ? "bg-emerald-700 text-white"
+                ? "bg-emerald text-white"
                 : "border border-line bg-white text-secondary hover:bg-canvas"
             }`}
           >
@@ -163,7 +161,7 @@ export default function StudentClassesPage() {
       {/* Danh sách lớp */}
       {filteredClasses.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-line bg-white px-6 py-12 text-center">
-          <School className="mx-auto size-10 text-secondary" />
+          <School className="mx-auto size-10 text-muted" />
 
           <h2 className="mt-4 text-lg font-extrabold text-ink">
             {!hasStudentProfile
@@ -181,7 +179,7 @@ export default function StudentClassesPage() {
 
           <Link
             to="/student/join-class"
-            className="mt-5 inline-flex rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white"
+            className="mt-5 inline-flex rounded-xl bg-emerald px-5 py-3 text-sm font-bold text-white"
           >
             Tham gia lớp học
           </Link>
@@ -230,7 +228,11 @@ export default function StudentClassesPage() {
                     )}
                   </div>
 
-                  <StudentStatusBadge label={meta.label} tone={meta.tone} />
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1.5 text-xs font-bold ${meta.className}`}
+                  >
+                    {meta.label}
+                  </span>
 
                   <p className="text-sm text-secondary">{meta.description}</p>
 
@@ -255,7 +257,7 @@ export default function StudentClassesPage() {
                   {status === "joined" && (
                     <Link
                       to={`/student/classes/${classroom.id}`}
-                      className="inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-5 text-sm font-bold text-white transition hover:opacity-90"
+                      className="inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald px-5 text-sm font-bold text-white transition hover:opacity-90"
                     >
                       Xem lớp học
                     </Link>

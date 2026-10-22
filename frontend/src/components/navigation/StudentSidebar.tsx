@@ -1,5 +1,5 @@
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { useEffect, useRef, type KeyboardEvent } from "react";
 
 import {
   BookOpen,
@@ -14,7 +14,6 @@ import {
 
 import { useStudentAccount } from "../../contexts/StudentAccountContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { getStudentInitials } from "../../utils/studentPresentation";
 
 type StudentSidebarProps = {
   isOpen: boolean;
@@ -53,23 +52,32 @@ const navigationItems = [
 export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarProps) {
   const { student, hasStudentProfile } = useStudentAccount();
   const { signOut, error } = useAuth();
-
-  const displayName = hasStudentProfile ? student.name : "Học sinh";
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (isOpen && !isDesktop) closeButtonRef.current?.focus();
-  }, [isOpen, isDesktop]);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
-  const handleDrawerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+  useEffect(() => {
     if (!isOpen || isDesktop) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const focusable = sidebarRef.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)');
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [isOpen, isDesktop, onClose]);
+
+  const handleDrawerKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!isOpen || isDesktop || event.key !== "Tab") return;
+    const focusable = sidebarRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not(:disabled)',
+    );
     const first = focusable?.[0];
     const last = focusable?.[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) {
@@ -80,6 +88,8 @@ export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarPro
       first?.focus();
     }
   };
+
+  const displayName = hasStudentProfile ? student.name : "Học sinh";
 
   return (
     <>
@@ -112,12 +122,12 @@ export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarPro
             onClick={onClose}
             className="flex items-center gap-3"
           >
-            <span className="grid size-10 place-items-center rounded-xl bg-emerald-700">
+            <span className="grid size-10 place-items-center rounded-xl bg-emerald">
               <Globe2 className="size-5 text-white" />
             </span>
 
             <span className="text-lg font-extrabold text-white">
-              Web<span className="text-emerald-300">Study</span>
+              Web<span className="text-emerald">Study</span>
             </span>
           </Link>
 
@@ -145,7 +155,7 @@ export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarPro
                 className={({ isActive }) =>
                   `flex min-h-11 items-center gap-3 rounded-xl px-4 text-sm font-semibold transition ${
                     isActive
-                      ? "bg-emerald-700 text-white"
+                      ? "bg-emerald text-white"
                       : "text-slate-300 hover:bg-white/10 hover:text-white"
                   }`
                 }
@@ -160,8 +170,8 @@ export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarPro
         {/* Hồ sơ Student */}
         <div className="mt-5 shrink-0 border-t border-white/15 pt-5">
           <div className="flex items-center gap-3">
-            <div aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full bg-emerald/20 text-sm font-extrabold text-emerald-300">
-              {getStudentInitials(hasStudentProfile ? student.name : undefined)}
+            <div className="grid size-11 shrink-0 place-items-center rounded-full bg-emerald/20 text-sm font-extrabold text-emerald">
+              HS
             </div>
 
             <div className="min-w-0">

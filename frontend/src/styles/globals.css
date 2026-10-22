@@ -54,22 +54,6 @@ img {
   outline: 2px solid #047857;
   outline-offset: 4px;
 }
-
-/* Keep keyboard focus visible throughout Student pages, including scrolling lists. */
-.student-app :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 3px solid #047857;
-  outline-offset: -3px;
-}
-.student-app :is(aside, .bg-ink) :is(a, button, input, [tabindex]):focus-visible,
-.student-app :is(a, button).bg-emerald-700:focus-visible {
-  outline-color: #fff;
-}
-.student-video-player .text-emerald { color: #047857; }
-.student-video-player .bg-emerald.text-white { background-color: #047857; }
-@media (prefers-reduced-motion: reduce) {
-  html:has(.student-app) { scroll-behavior: auto; }
-  .student-app .transition-transform { transition-duration: 0ms; }
-}
 @media (prefers-reduced-motion: no-preference) {
   .landing-contours { animation: landing-contour-drift 24s ease-in-out infinite alternate; }
   .landing-compass { transition: transform 220ms ease-out; }

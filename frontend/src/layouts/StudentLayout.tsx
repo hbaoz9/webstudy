@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 
 import { StudentSidebar } from "../components/navigation/StudentSidebar";
@@ -9,22 +9,10 @@ export default function StudentLayout() {
   const { pathname } = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isDesktop = useDesktopViewport();
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const wasSidebarOpen = useRef(false);
-
-  useEffect(() => {
-    if (wasSidebarOpen.current && !isSidebarOpen && !isDesktop) {
-      menuButtonRef.current?.focus();
-    }
-    wasSidebarOpen.current = isSidebarOpen;
-  }, [isSidebarOpen, isDesktop]);
-
-  const closeSidebar = () => {
-    setIsSidebarOpen(false);
-  };
+  const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
 
   return (
-    <div className="student-app min-h-screen bg-canvas">
+    <div className="min-h-screen bg-canvas">
       {/* Sidebar */}
       <StudentSidebar
         isOpen={isSidebarOpen}
@@ -33,9 +21,9 @@ export default function StudentLayout() {
       />
 
       {/* Vùng nội dung */}
-      <div inert={isSidebarOpen && !isDesktop} className="min-h-screen min-w-0 lg:pl-[260px]">
+      <div className="min-h-screen min-w-0 lg:pl-[260px]">
         {/* Topbar */}
-        <StudentTopbar onOpenSidebar={() => setIsSidebarOpen(true)} menuButtonRef={menuButtonRef} />
+        <StudentTopbar onOpenSidebar={() => setIsSidebarOpen(true)} />
 
         {/* Nội dung của từng trang Student */}
         <main className="min-w-0 p-5 lg:p-8">

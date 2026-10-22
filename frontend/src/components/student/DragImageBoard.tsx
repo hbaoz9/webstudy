@@ -262,7 +262,7 @@ function LegacyImageBoard({
         <button
           type="button"
           onClick={() => store({})}
-          className="shrink-0 rounded-full border border-emerald px-4 py-2 text-sm font-bold text-emerald-700"
+          className="shrink-0 rounded-full border border-emerald px-4 py-2 text-sm font-bold text-emerald"
         >
           Đặt lại
         </button>
@@ -421,7 +421,7 @@ export function ImageLabelBoard({ activity, storageKey }: { activity: ImageLabel
         <legend className="px-1 text-sm font-bold text-ink">Nhãn chữ · Đã đặt {placedCount}/{activity.labels.length}</legend>
         <div className="flex flex-wrap gap-2">{labelOrder.map((label) => {
           const index = activity.zones.findIndex((zone) => zone.id === placements[label.id]);
-          return <button key={label.id} type="button" aria-label={`Nhãn ${label.text}`} aria-pressed={selected === label.id} onPointerDown={(event) => start(event, label.id)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { pointer.current = null; setGhost(null); }} onClick={() => { if (!suppressClick.current) setSelected(label.id); suppressClick.current = false; }} className={`min-h-11 max-w-full touch-none rounded-xl border px-4 py-2 text-left text-sm font-bold disabled:opacity-50 ${selected === label.id ? 'border-emerald bg-emerald-700 text-white' : 'border-line bg-white text-ink'}`}>
+          return <button key={label.id} type="button" aria-label={`Nhãn ${label.text}`} aria-pressed={selected === label.id} onPointerDown={(event) => start(event, label.id)} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { pointer.current = null; setGhost(null); }} onClick={() => { if (!suppressClick.current) setSelected(label.id); suppressClick.current = false; }} className={`min-h-11 max-w-full touch-none rounded-xl border px-4 py-2 text-left text-sm font-bold disabled:opacity-50 ${selected === label.id ? 'border-emerald bg-emerald text-white' : 'border-line bg-white text-ink'}`}>
             {label.text}{index >= 0 && <span className="block text-xs font-normal">Đang ở vùng {index + 1}</span>}
           </button>;
         })}</div>
@@ -429,12 +429,12 @@ export function ImageLabelBoard({ activity, storageKey }: { activity: ImageLabel
         {selected && <button type="button" onClick={() => { const next = { ...placements }; delete next[selected]; persist(next); setSelected(null); }} className="mt-3 min-h-11 text-sm font-bold text-red-600">Gỡ nhãn đang chọn</button>}
       </fieldset>
       <div className="flex flex-wrap gap-3">
-        <button type="button" disabled={!ready} onClick={() => { if (placedCount !== activity.labels.length) { setFeedback('Hãy đặt đủ nhãn trước khi kiểm tra.'); setChecked(false); return; } const count = activity.labels.filter((label) => placements[label.id] === label.correctZoneId).length; setChecked(true); setFeedback(`Đúng ${count}/${activity.labels.length} nhãn. ${count === activity.labels.length ? 'Hoàn thành hoạt động!' : 'Bạn có thể sửa và kiểm tra lại.'}`); }} className="min-h-11 rounded-xl bg-emerald-700 px-5 text-sm font-bold text-white disabled:opacity-50">Kiểm tra</button>
+        <button type="button" disabled={!ready} onClick={() => { if (placedCount !== activity.labels.length) { setFeedback('Hãy đặt đủ nhãn trước khi kiểm tra.'); setChecked(false); return; } const count = activity.labels.filter((label) => placements[label.id] === label.correctZoneId).length; setChecked(true); setFeedback(`Đúng ${count}/${activity.labels.length} nhãn. ${count === activity.labels.length ? 'Hoàn thành hoạt động!' : 'Bạn có thể sửa và kiểm tra lại.'}`); }} className="min-h-11 rounded-xl bg-emerald px-5 text-sm font-bold text-white disabled:opacity-50">Kiểm tra</button>
         <button type="button" onClick={() => { persist({}); setSelected(null); }} className="min-h-11 rounded-xl border border-line px-5 text-sm font-bold text-ink">Làm lại</button>
       </div>
       {feedback && <p role="status" className="text-sm font-bold text-ink">{feedback}</p>}
       {storageError && <div role="alert" className="text-sm text-red-600"><p>{storageError}</p><button type="button" onClick={() => persist(placements)} className="mt-2 min-h-11 font-bold underline">Thử lưu nhãn lại</button></div>}
-      {ghost && ghostLabel && <div aria-hidden="true" style={{ left: ghost.x + 12, top: ghost.y + 12 }} className="pointer-events-none fixed z-50 max-w-40 rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white shadow-lg">{ghostLabel.text}</div>}
+      {ghost && ghostLabel && <div aria-hidden="true" style={{ left: ghost.x + 12, top: ghost.y + 12 }} className="pointer-events-none fixed z-50 max-w-40 rounded-xl bg-emerald px-3 py-2 text-sm font-bold text-white shadow-lg">{ghostLabel.text}</div>}
     </div>
   );
 }

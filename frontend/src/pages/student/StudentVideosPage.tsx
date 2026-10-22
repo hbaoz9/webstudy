@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import InteractiveVideoPlayer from "../../components/media/InteractiveVideoPlayer";
@@ -6,13 +6,6 @@ import { useTeacherData } from "../../contexts/TeacherDataContext";
 import { loadTeacherVideos, videoClassIds, TEACHER_VIDEOS_KEY, TEACHER_VIDEOS_CHANGED } from "../../utils/teacherVideoStorage";
 import { geo10Lessons } from "../../data/geo10Curriculum";
 import { useStudentAccount } from "../../contexts/StudentAccountContext";
-import { useStudentClassMemberships } from "../../hooks/useStudentClassMemberships";
-import { getActiveStudentClassIds } from "../../utils/studentMembership";
-import { useLocalStorageRevision } from "../../hooks/useLocalStorageRevision";
-import StudentPageHeader from "../../components/student/StudentPageHeader";
-
-const videoStorageKeys = [TEACHER_VIDEOS_KEY];
-const videoEvents = [TEACHER_VIDEOS_CHANGED];
 
 export default function StudentVideosPage() {
   const [searchParams] = useSearchParams();
@@ -22,14 +15,29 @@ export default function StudentVideosPage() {
     (lesson) => lesson.id === requestedLessonId,
   );
 
-  const { classrooms } = useTeacherData();
-  const { memberships } = useStudentClassMemberships();
+  const { classrooms, isStudentJoinedClass } = useTeacherData();
 
   const { student, hasStudentProfile } = useStudentAccount();
-  const videosRevision = useLocalStorageRevision(videoStorageKeys, videoEvents);
-  const videos = useMemo(loadTeacherVideos, [videosRevision]);
+  const [videos, setVideos] = useState(loadTeacherVideos);
+  useEffect(() => {
+    const refresh = () => setVideos(loadTeacherVideos());
+    const storage = (event: StorageEvent) => { if (event.key === TEACHER_VIDEOS_KEY || event.key === null) refresh(); };
+    window.addEventListener("storage", storage);
+    window.addEventListener("focus", refresh);
+    window.addEventListener(TEACHER_VIDEOS_CHANGED, refresh);
+    return () => { window.removeEventListener("storage", storage); window.removeEventListener("focus", refresh); window.removeEventListener(TEACHER_VIDEOS_CHANGED, refresh); };
+  }, []);
 
-  const joinedClassIds = getActiveStudentClassIds(memberships);
+  const joinedClassIds = new Set(
+    classrooms
+      .filter(
+        (classroom) =>
+          classroom.status !== "archived" &&
+          hasStudentProfile &&
+          isStudentJoinedClass(classroom.id, student!.id),
+      )
+      .map((classroom) => classroom.id),
+  );
 
   const visibleVideos = videos.filter(
     (video) =>
@@ -41,9 +49,16 @@ export default function StudentVideosPage() {
   return (
     <div className="min-w-0 py-2">
       <div className="mx-auto max-w-3xl space-y-6">
-        <StudentPageHeader title={selectedLesson
-          ? `Video của Bài ${selectedLesson.number}` : "Video bài học"}
-          description="Video tương tác của các lớp bạn đã tham gia." />
+        <header>
+          <h1 className="text-2xl font-extrabold text-ink">
+            {selectedLesson
+              ? `Video của Bài ${selectedLesson.number}`
+              : "Video bài học"}
+          </h1>
+          <p className="mt-2 text-sm text-secondary">
+            Video tương tác của các lớp bạn đã tham gia.
+          </p>
+        </header>
 
         <section className="rounded-2xl border border-line bg-white p-5 shadow-card">
           {hasStudentProfile ? (
@@ -54,7 +69,7 @@ export default function StudentVideosPage() {
           ) : (
             <Link
               to="/student/join-class"
-              className="text-sm font-bold text-emerald-700"
+              className="text-sm font-bold text-emerald"
             >
               Tạo hồ sơ và tham gia lớp
             </Link>
@@ -84,7 +99,7 @@ export default function StudentVideosPage() {
                   <h2 className="font-extrabold text-ink">{video.title}</h2>
 
                   {lesson && (
-                    <p className="mt-1 text-sm font-semibold text-emerald-700">
+                    <p className="mt-1 text-sm font-semibold text-emerald">
                       Bài {lesson.number}. {lesson.title}
                     </p>
                   )}
@@ -95,7 +110,7 @@ export default function StudentVideosPage() {
                     {video.checkpoints.length} câu hỏi trong video
                   </p>
 
-                  <div className="student-video-player mt-4">
+                  <div className="mt-4">
                     <InteractiveVideoPlayer videoId={video.youtubeId} checkpoints={video.checkpoints} title={video.title} />
                   </div>
                 </article>
@@ -110,7 +125,7 @@ export default function StudentVideosPage() {
               ? `/student/lessons?lesson=${requestedLessonId}`
               : "/student/lessons"
           }
-          className="inline-block text-sm font-bold text-emerald-700"
+          className="inline-block text-sm font-bold text-emerald"
         >
           ← Quay lại bài học
         </Link>

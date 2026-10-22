@@ -1,3 +1,4 @@
+import { QuestionImageView } from "../../components/questions/QuestionImage";
 import { useState, useEffect, useRef, type FormEvent } from "react";
 
 import { Link, useParams } from "react-router-dom";
@@ -8,20 +9,22 @@ import { useTeacherData } from "../../contexts/TeacherDataContext";
 
 import { useStudentAccount } from "../../contexts/StudentAccountContext";
 import { AssignmentContentView } from "../../components/assignments/AssignmentContent";
-import AssignmentWorkQuestion from "../../components/student/AssignmentWorkQuestion";
-import Dialog from "../../components/common/Dialog";
-import { useAssignmentDraft } from "../../hooks/useAssignmentDraft";
-import { useAssignmentCountdown } from "../../hooks/useAssignmentCountdown";
-import { formatAssignmentCountdown, getFirstIncompleteQuestionIndex, isAssignmentDeadlineExpired } from "../../utils/studentAssignmentWork";
 import type {
   AssignmentAnswerV2,
+  AssignmentAnswersV2,
 } from "../../types/assignment";
 
 import {
   evaluateAssignmentAnswer,
+  normalizeNumericAnswer,
+  assignmentAnswerDraftKey,
   assignmentQuestionSignature,
+  loadAssignmentAnswerDraft,
+  saveAssignmentAnswerDraft,
   hasAssignmentDraftAnswers,
   getAssignmentResultVisibility,
+  describeAssignmentCorrectAnswer,
+  type AssignmentAnswerDraftRead,
 } from "../../utils/assignmentQuestion";
 
 export default function StudentAssignmentWorkPage() {
@@ -54,17 +57,23 @@ function AssignmentWorkSession() {
   const submission = submissions.find(
     (item) => item.assignmentId === assignmentId && item.studentId === studentId,
   );
+  const [draftInfo, setDraftInfo] = useState<AssignmentAnswerDraftRead>(() =>
+    assignment?.status === "published" && studentId && !submission &&
+      isStudentJoinedClass(assignment.classroomId, studentId)
+      ? loadAssignmentAnswerDraft(assignment, studentId)
+      : { answers: {}, status: "empty" },
+  );
+  const [answers, setAnswers] = useState<AssignmentAnswersV2>(() => draftInfo.answers);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [draftSaveAttempt, setDraftSaveAttempt] = useState(0);
+
   const [error, setError] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
-  const [resetNotice, setResetNotice] = useState(false);
-  const resetButtonRef = useRef<HTMLButtonElement>(null);
-  const resetNoticeRef = useRef<HTMLParagraphElement>(null);
-  const resetDialogWasOpenRef = useRef(false);
   const confirmDialogRef = useRef<HTMLDialogElement>(null);
   const reviewButtonRef = useRef<HTMLButtonElement>(null);
   const submittingRef = useRef(false);
 
+  const [now, setNow] = useState(() => Date.now());
   const [activeQuestion, setActiveQuestion] = useState(0);
   const questionHeadingRef = useRef<HTMLHeadingElement>(null);
   const previousQuestionRef = useRef(0);
@@ -147,29 +156,10 @@ function AssignmentWorkSession() {
     isStudentJoinedClass(assignment.classroomId, studentId)
     : false;
 
-  const hasSubmission = Boolean(submission);
-  const { draftInfo, answers, setAnswers, draftSaveStatus, retryRead, resetDraft, retrySave } = useAssignmentDraft({
-    assignment, studentId,
-    canRead: Boolean(assignment && isStudentJoinedClass(assignment.classroomId, studentId)),
-    canSave: isJoined && Boolean(approvedRequest), hasSubmission, submissionStorageStatus,
-  });
-  useEffect(() => {
-    if (resetDialogWasOpenRef.current && !resetDialogOpen) {
-      if (resetNotice) resetNoticeRef.current?.focus();
-      else resetButtonRef.current?.focus();
-    }
-    resetDialogWasOpenRef.current = resetDialogOpen;
-  }, [resetDialogOpen, resetNotice]);
-  useEffect(() => {
-    if (draftSaveStatus === "saved") setResetNotice(false);
-  }, [draftSaveStatus]);
-
   const deadline = Date.parse(assignment?.dueAt ?? "");
-  const { now, refreshNow } = useAssignmentCountdown(
-    assignment?.status === "published" && Boolean(approvedRequest) && isJoined && !hasSubmission,
-    deadline,
-  );
-  const isExpired = isAssignmentDeadlineExpired(deadline, now);
+
+  const hasSubmission = Boolean(submission);
+  const isExpired = !Number.isFinite(deadline) || now >= deadline;
 
   useEffect(() => {
     const dialog = confirmDialogRef.current;
@@ -189,6 +179,62 @@ function AssignmentWorkSession() {
     }
   }, [confirmOpen, assignment?.status, isJoined, approvedRequest?.id, hasSubmission]);
 
+  useEffect(() => {
+    if (!assignment || !studentId || !isJoined || !approvedRequest ||
+      assignment.status !== "published" || hasSubmission ||
+      draftInfo.status === "error" || answers === draftInfo.answers) return;
+    try {
+      saveAssignmentAnswerDraft(assignment, studentId, answers);
+      setDraftSaveStatus("saved");
+    } catch {
+      setDraftSaveStatus("error");
+    }
+  }, [assignment, studentId, isJoined, approvedRequest, hasSubmission, answers, draftInfo, draftSaveAttempt]);
+
+  useEffect(() => {
+    if (!assignmentId || !studentId || !hasSubmission || submissionStorageStatus !== "saved") return;
+    try {
+      window.localStorage.removeItem(assignmentAnswerDraftKey(assignmentId, studentId));
+    } catch {
+      // A saved submission always takes precedence over a leftover answer draft.
+    }
+  }, [assignmentId, studentId, hasSubmission, submissionStorageStatus]);
+
+  useEffect(() => {
+    const currentTime = Date.now();
+    setNow(currentTime);
+
+    if (
+      assignment?.status !== "published" ||
+      !approvedRequest ||
+      !isJoined ||
+      hasSubmission ||
+      !Number.isFinite(deadline) ||
+      currentTime >= deadline
+    ) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const nextTime = Date.now();
+      setNow(nextTime);
+
+      if (nextTime >= deadline) {
+        window.clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    assignmentId,
+    studentId,
+    assignment?.status,
+    approvedRequest?.id,
+    isJoined,
+    deadline,
+    hasSubmission,
+  ]);
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -205,14 +251,20 @@ function AssignmentWorkSession() {
     }
 
     const currentTime = Date.now();
-    refreshNow();
+    setNow(currentTime);
 
-    if (isAssignmentDeadlineExpired(deadline, currentTime)) {
+    if (!Number.isFinite(deadline) || currentTime >= deadline) {
       setError("Bài tập đã hết hạn nộp.");
       return;
     }
 
-    const incompleteQuestionIndex = getFirstIncompleteQuestionIndex(assignment.questions, answers);
+    const incompleteQuestionIndex = assignment.questions.findIndex(
+      (question) => {
+        const result = evaluateAssignmentAnswer(question, answers[question.id]);
+
+        return result === "unanswered" || result === "invalid";
+      },
+    );
 
     if (incompleteQuestionIndex !== -1) {
       setActiveQuestion(incompleteQuestionIndex);
@@ -230,8 +282,8 @@ function AssignmentWorkSession() {
   const confirmSubmission = () => {
     if (!confirmOpen || submittingRef.current || !assignment || submission || !isJoined || !approvedRequest) return;
     const currentTime = Date.now();
-    refreshNow();
-    if (isAssignmentDeadlineExpired(deadline, currentTime)) {
+    setNow(currentTime);
+    if (!Number.isFinite(deadline) || currentTime >= deadline) {
       setError("Bài tập đã hết hạn nộp.");
       return;
     }
@@ -270,7 +322,7 @@ function AssignmentWorkSession() {
 
           <Link
             to="/student/assignments"
-            className="mt-4 inline-block text-sm font-bold text-emerald-700"
+            className="mt-4 inline-block text-sm font-bold text-emerald"
           >
             Quay lại danh sách
           </Link>
@@ -289,7 +341,11 @@ function AssignmentWorkSession() {
     return result === "correct" || result === "incorrect";
   });
   const answeredCount = answeredQuestions.filter(Boolean).length;
-  const timeRemaining = formatAssignmentCountdown(deadline, now);
+  const remainingSeconds = Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0;
+  const hours = Math.floor(remainingSeconds / 3600);
+  const minutes = Math.floor((remainingSeconds % 3600) / 60);
+  const seconds = remainingSeconds % 60;
+  const timeRemaining = `${hours > 0 ? `${hours}:` : ""}${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   const resultVisibility = getAssignmentResultVisibility(assignment);
   const canReviewAnswers = Boolean(submission) && resultVisibility === "answers" && submissionStorageStatus === "saved";
 
@@ -298,7 +354,7 @@ function AssignmentWorkSession() {
       <div className="mx-auto max-w-3xl space-y-6">
         <Link
           to="/student/assignments"
-          className="text-sm font-bold text-emerald-700"
+          className="text-sm font-bold text-emerald"
         >
           ← Quay lại danh sách bài tập
         </Link>
@@ -342,18 +398,30 @@ function AssignmentWorkSession() {
             {draftInfo.status === "error" ? (
               <div role="alert">
                 <p>Không đọc được bản nháp. Dữ liệu cũ chưa bị ghi đè.</p>
-                <button type="button" className="mt-2 min-h-11 font-bold text-emerald-700" onClick={retryRead}>Thử đọc lại</button>
-                <button ref={resetButtonRef} type="button" className="ml-4 min-h-11 font-bold text-red-600" onClick={() => setResetDialogOpen(true)}>Bắt đầu lại</button>
+                <button type="button" className="mt-2 min-h-11 font-bold text-emerald" onClick={() => {
+                  const restored = loadAssignmentAnswerDraft(assignment, studentId);
+                  setDraftInfo(restored);
+                  setAnswers(restored.answers);
+                }}>Thử đọc lại</button>
+                <button type="button" className="ml-4 min-h-11 font-bold text-red-600" onClick={() => {
+                  if (!window.confirm("Xóa bản nháp của bài này và bắt đầu lại?")) return;
+                  try {
+                    window.localStorage.removeItem(assignmentAnswerDraftKey(assignment.id, studentId));
+                    const empty: AssignmentAnswerDraftRead = { answers: {}, status: "empty" };
+                    setDraftInfo(empty);
+                    setAnswers(empty.answers);
+                    setDraftSaveStatus("idle");
+                  } catch { setError("Không thể xóa bản nháp. Hãy kiểm tra quyền lưu của trình duyệt."); }
+                }}>Bắt đầu lại</button>
               </div>
             ) : draftSaveStatus === "error" ? (
               <div role="alert" className="text-red-600">
                 <p>Chưa lưu được đáp án trên trình duyệt. Đừng tải lại hoặc đóng trang.</p>
-                <button type="button" className="mt-2 min-h-11 font-bold" onClick={retrySave}>Thử lưu nháp lại</button>
+                <button type="button" className="mt-2 min-h-11 font-bold" onClick={() => setDraftSaveAttempt((value) => value + 1)}>Thử lưu nháp lại</button>
               </div>
             ) : (
-              <p ref={resetNoticeRef} tabIndex={resetNotice ? -1 : undefined} role="status" className="text-secondary">
-                {resetNotice ? "Đã xóa bản nháp của bài này. Bạn có thể bắt đầu lại."
-                  : draftSaveStatus === "saved" ? "Đã lưu nháp trên trình duyệt này."
+              <p role="status" className="text-secondary">
+                {draftSaveStatus === "saved" ? "Đã lưu nháp trên trình duyệt này."
                   : draftInfo.status === "restored" ? "Đã khôi phục đáp án chưa nộp."
                     : draftInfo.status === "changed" ? "Đề đã thay đổi. Vui lòng làm lại theo nội dung hiện tại."
                       : "Đáp án được tự động lưu nháp trên trình duyệt này. Lưu nháp chưa phải nộp bài."}
@@ -411,21 +479,183 @@ function AssignmentWorkSession() {
                     aria-label={`Câu ${index + 1}, ${answeredQuestions[index] ? "đã trả lời" : "chưa trả lời đầy đủ"}`}
                     aria-current={index === activeQuestion ? "step" : undefined}
                     onClick={() => setActiveQuestion(index)}
-                    className={`min-h-11 min-w-11 rounded-lg border px-2 text-sm font-bold ${index === activeQuestion ? "border-ink bg-ink text-white" : answeredQuestions[index] ? "border-emerald bg-emerald/10 text-emerald-700" : "border-line bg-white text-secondary"}`}>
+                    className={`min-h-11 min-w-11 rounded-lg border px-2 text-sm font-bold ${index === activeQuestion ? "border-ink bg-ink text-white" : answeredQuestions[index] ? "border-emerald bg-emerald/10 text-emerald" : "border-line bg-white text-secondary"}`}>
                     {index + 1}{answeredQuestions[index] && <span aria-hidden="true"> ✓</span>}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-secondary">Dấu ✓ là đã trả lời đầy đủ, chưa phải kết quả đúng/sai.</p>
+              <p className="mt-2 text-xs text-muted">Dấu ✓ là đã trả lời đầy đủ, chưa phải kết quả đúng/sai.</p>
             </section>
           )}
-          {assignment.questions.map((question, index) => index === activeQuestion ? (
-            <AssignmentWorkQuestion key={question.id} question={question} index={index}
-              currentAnswer={submission ? submission.answers[question.id] : answers[question.id]}
-              isDisabled={Boolean(submission) || isExpired || draftInfo.status === "error"}
-              canReviewAnswers={canReviewAnswers} setQuestionAnswer={setQuestionAnswer}
-              toggleMultipleChoiceAnswer={toggleMultipleChoiceAnswer} setStatementAnswer={setStatementAnswer} />
-          ) : null)}
+          {assignment.questions.map((question, index) => {
+            if (index !== activeQuestion) return null;
+            const currentAnswer = submission
+              ? submission.answers[question.id]
+              : answers[question.id];
+
+            const isDisabled = Boolean(submission) || isExpired || draftInfo.status === "error";
+
+            return (
+              <article key={question.id} className="min-w-0 break-words rounded-2xl border border-line bg-white p-5 shadow-card">
+
+                <p className="whitespace-pre-wrap font-bold leading-7 text-ink">
+                  Câu {index + 1}. {question.content}
+                </p>
+                <QuestionImageView image={question.image} />
+                <fieldset disabled={isDisabled} className="min-w-0">
+                  <legend className="sr-only">Câu {index + 1}</legend>
+
+                  {question.type === "single_choice" ||
+                    question.type === "multiple_choice" ? (
+                    <>
+                      <p className="mt-2 text-xs text-muted">
+                        {question.type === "single_choice"
+                          ? "Chọn một đáp án."
+                          : "Chọn các đáp án bạn cho là đúng."}
+                      </p>
+
+                      <div className="mt-4 space-y-2">
+                        {question.options.map((option, optionIndex) => {
+                          const label = String.fromCharCode(65 + optionIndex);
+
+                          const isChecked =
+                            question.type === "single_choice"
+                              ? currentAnswer?.type === "single_choice" &&
+                              currentAnswer.selectedOptionId === option.id
+                              : currentAnswer?.type === "multiple_choice" &&
+                              currentAnswer.selectedOptionIds.includes(
+                                option.id,
+                              );
+
+                          return (
+                            <label
+                              key={option.id}
+                              className="flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3 text-sm text-ink"
+                            >
+                              <input
+                                type={
+                                  question.type === "single_choice"
+                                    ? "radio"
+                                    : "checkbox"
+                                }
+                                name={`question-${question.id}`}
+                                checked={isChecked}
+                                onChange={() => {
+                                  if (question.type === "single_choice") {
+                                    setQuestionAnswer(question.id, {
+                                      type: "single_choice",
+                                      selectedOptionId: option.id,
+                                    });
+                                  } else {
+                                    toggleMultipleChoiceAnswer(
+                                      question.id,
+                                      option.id,
+                                    );
+                                  }
+                                }}
+                                className="mt-1 size-4 shrink-0 accent-emerald"
+                              />
+
+                              <span className="min-w-0 break-words whitespace-pre-wrap">
+                                <strong className="mr-2">{label}.</strong>
+                                {option.text}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : question.type === "short_answer" ? (
+                    <div className="mt-4 space-y-2">
+                      <label className="block text-sm font-bold">Câu trả lời của bạn
+                        <input type="text" inputMode="text" autoComplete="off" spellCheck={false} aria-label={`Đáp án số câu ${index + 1}`} aria-describedby={`numeric-hint-${question.id}`} aria-invalid={currentAnswer?.type === "short_answer" && !!currentAnswer.value.trim() && normalizeNumericAnswer(currentAnswer.value) === null} value={currentAnswer?.type === "short_answer" ? currentAnswer.value : ""} onChange={(event) => setQuestionAnswer(question.id, { type: "short_answer", value: event.target.value })} placeholder="Nhập số, ví dụ -12,5" className="mt-2 block min-h-12 w-full rounded-xl border border-line px-3 font-normal disabled:bg-slate-50 sm:max-w-sm" />
+                      </label>
+                      <p id={`numeric-hint-${question.id}`} className="text-sm leading-6 text-secondary">Chỉ nhập số; có thể dùng dấu âm, dấu phẩy hoặc dấu chấm thập phân. Không kèm đơn vị hay dấu tách hàng nghìn.</p>
+                      {currentAnswer?.type === "short_answer" && !!currentAnswer.value.trim() && normalizeNumericAnswer(currentAnswer.value) === null && <p role="alert" className="text-sm text-red-700">Giá trị chưa đúng định dạng số, ví dụ 125 hoặc -12,5.</p>}
+                    </div>
+                  ) : question.type === "true_false" ? (
+                    <div className="mt-4 flex flex-wrap gap-4">
+                      {[true, false].map((value) => (
+                        <label
+                          key={String(value)}
+                          className="flex cursor-pointer items-center gap-3 rounded-xl border border-line px-4 py-3 text-sm text-ink"
+                        >
+                          <input
+                            type="radio"
+                            name={`question-${question.id}`}
+                            checked={
+                              currentAnswer?.type === "true_false" &&
+                              currentAnswer.answer === value
+                            }
+                            onChange={() =>
+                              setQuestionAnswer(question.id, {
+                                type: "true_false",
+                                answer: value,
+                              })
+                            }
+                            className="size-4 accent-emerald"
+                          />
+
+                          <span>{value ? "Đúng" : "Sai"}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      {question.statements.map((statement, statementIndex) => (
+                        <div
+                          key={statement.id}
+                          className="rounded-xl border border-line p-4"
+                        >
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-ink">
+                            <strong>Ý {statementIndex + 1}. </strong>
+                            {statement.content}
+                          </p>
+
+                          <div className="mt-3 flex flex-wrap gap-5">
+                            {[true, false].map((value) => (
+                              <label
+                                key={String(value)}
+                                className="flex cursor-pointer items-center gap-2 text-sm text-ink"
+                              >
+                                <input
+                                  type="radio"
+                                  name={`question-${question.id}-statement-${statement.id}`}
+                                  checked={
+                                    currentAnswer?.type === "true_false_group" &&
+                                    currentAnswer.answersByStatementId[
+                                    statement.id
+                                    ] === value
+                                  }
+                                  onChange={() =>
+                                    setStatementAnswer(
+                                      question.id,
+                                      statement.id,
+                                      value,
+                                    )
+                                  }
+                                  className="size-4 accent-emerald"
+                                />
+
+                                <span>{value ? "Đúng" : "Sai"}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {canReviewAnswers && (
+                    <div className="mt-4 border-t border-line pt-4 text-sm">
+                      <p className="font-bold text-ink">Kết quả câu này: {evaluateAssignmentAnswer(question, currentAnswer) === "correct" ? "Chính xác" : "Chưa chính xác"}</p>
+                      <p className="mt-2 break-words whitespace-pre-wrap text-emerald">Đáp án: {describeAssignmentCorrectAnswer(question)}</p>
+                      {question.explanation && <p className="mt-2 break-words whitespace-pre-wrap text-secondary">Giải thích: {question.explanation}</p>}
+                    </div>
+                  )}
+                </fieldset>
+              </article>
+            );
+          })}
 
           {assignment.questions.length > 0 && (
             <div className="flex items-center justify-between gap-3">
@@ -448,7 +678,7 @@ function AssignmentWorkSession() {
           {!submission && !isExpired && draftInfo.status !== "error" && assignment.questions.length > 0 && (
             <button
               type="submit"
-              className="min-h-12 rounded-full bg-emerald-700 px-6 text-sm font-bold text-white hover:bg-emerald-800"
+              className="min-h-12 rounded-full bg-emerald px-6 text-sm font-bold text-white hover:bg-emerald/90"
             >
               Nộp toàn bài
             </button>
@@ -484,22 +714,9 @@ function AssignmentWorkSession() {
           {isExpired && <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">Bài tập đã hết hạn nộp. Các lựa chọn của bạn vẫn được giữ lại.</p>}
           <div className="mt-6 flex flex-wrap justify-end gap-3">
             <button ref={reviewButtonRef} type="button" onClick={() => setConfirmOpen(false)} className="min-h-11 rounded-full border border-line bg-white px-5 text-sm font-bold">Kiểm tra lại</button>
-            <button type="button" onClick={confirmSubmission} disabled={isExpired || hasSubmission} className="min-h-11 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">Nộp bài</button>
+            <button type="button" onClick={confirmSubmission} disabled={isExpired || hasSubmission} className="min-h-11 rounded-full bg-emerald px-5 text-sm font-bold text-white hover:bg-emerald/90 disabled:opacity-50">Nộp bài</button>
           </div>
         </dialog>
-        {resetDialogOpen && (
-          <Dialog title="Xóa bản nháp của bài này?" onClose={() => setResetDialogOpen(false)}>
-            <p className="text-sm leading-6 text-secondary">Các câu trả lời chưa nộp của bài này sẽ bị xóa trên trình duyệt. Hành động này không thể hoàn tác.</p>
-            <div className="mt-6 flex flex-wrap justify-end gap-3">
-              <button type="button" onClick={() => setResetDialogOpen(false)} className="min-h-11 rounded-full border border-line px-5 text-sm font-bold text-ink">Giữ bản nháp</button>
-              <button type="button" onClick={() => {
-                if (resetDraft()) setResetNotice(true);
-                else setError("Không thể xóa bản nháp. Hãy kiểm tra quyền lưu của trình duyệt.");
-                setResetDialogOpen(false);
-              }} className="min-h-11 rounded-full bg-red-700 px-5 text-sm font-bold text-white">Xóa bản nháp</button>
-            </div>
-          </Dialog>
-        )}
       </div>
     </div>
   );

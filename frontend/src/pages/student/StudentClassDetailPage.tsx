@@ -39,7 +39,7 @@ export default function StudentClassDetailPage() {
     return (
       <div className="mx-auto max-w-4xl">
         <section className="rounded-2xl border border-line bg-white p-8 text-center shadow-card">
-          <School className="mx-auto size-10 text-secondary" />
+          <School className="mx-auto size-10 text-muted" />
 
           <h1 className="mt-4 text-xl font-extrabold text-ink">
             Không tìm thấy lớp học
@@ -51,7 +51,7 @@ export default function StudentClassDetailPage() {
 
           <Link
             to="/student/classes"
-            className="mt-5 inline-flex rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white"
+            className="mt-5 inline-flex rounded-xl bg-emerald px-5 py-3 text-sm font-bold text-white"
           >
             Quay về Lớp học của tôi
           </Link>
@@ -74,7 +74,7 @@ export default function StudentClassDetailPage() {
 
           <Link
             to="/student/join-class"
-            className="mt-5 inline-flex rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white"
+            className="mt-5 inline-flex rounded-xl bg-emerald px-5 py-3 text-sm font-bold text-white"
           >
             Tham gia lớp học
           </Link>
@@ -96,7 +96,7 @@ export default function StudentClassDetailPage() {
     return (
       <div className="mx-auto max-w-4xl">
         <section className="rounded-2xl border border-line bg-white p-8 text-center shadow-card">
-          <School className="mx-auto size-10 text-secondary" />
+          <School className="mx-auto size-10 text-muted" />
 
           <h1 className="mt-4 text-xl font-extrabold text-ink">
             Chưa thể truy cập lớp học
@@ -108,7 +108,7 @@ export default function StudentClassDetailPage() {
 
           <Link
             to="/student/classes"
-            className="mt-5 inline-flex rounded-xl bg-emerald-700 px-5 py-3 text-sm font-bold text-white"
+            className="mt-5 inline-flex rounded-xl bg-emerald px-5 py-3 text-sm font-bold text-white"
           >
             Quay về Lớp học của tôi
           </Link>
@@ -148,7 +148,7 @@ export default function StudentClassDetailPage() {
     <div className="mx-auto max-w-6xl space-y-7">
       <Link
         to="/student/classes"
-        className="inline-flex items-center gap-2 text-sm font-bold text-emerald-700 hover:underline"
+        className="inline-flex items-center gap-2 text-sm font-bold text-emerald hover:underline"
       >
         <ArrowLeft className="size-4" />
         Lớp học của tôi
@@ -169,7 +169,7 @@ export default function StudentClassDetailPage() {
         <div className="p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald">
                 Lớp học
               </p>
 
@@ -259,7 +259,7 @@ export default function StudentClassDetailPage() {
             to={`/student/assignments?class=${encodeURIComponent(
               classroom.id,
             )}`}
-            className="text-sm font-bold text-emerald-700 hover:underline"
+            className="text-sm font-bold text-emerald hover:underline"
           >
             Xem tất cả
           </Link>
@@ -267,7 +267,7 @@ export default function StudentClassDetailPage() {
 
         {classAssignments.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center">
-            <ClipboardList className="mx-auto size-9 text-secondary" />
+            <ClipboardList className="mx-auto size-9 text-muted" />
 
             <p className="mt-3 text-sm text-secondary">
               Lớp này chưa có bài tập nào được xuất bản.
@@ -305,14 +305,14 @@ export default function StudentClassDetailPage() {
                       </h3>
 
                       {lesson && (
-                        <p className="mt-1 text-sm font-semibold text-emerald-700">
+                        <p className="mt-1 text-sm font-semibold text-emerald">
                           Bài {lesson.number}. {lesson.title}
                         </p>
                       )}
                     </div>
 
                     {submission && (
-                      <span className="shrink-0 rounded-full bg-emerald/10 px-3 py-1 text-xs font-bold text-emerald-700">
+                      <span className="shrink-0 rounded-full bg-emerald/10 px-3 py-1 text-xs font-bold text-emerald">
                         Đã nộp
                       </span>
                     )}
@@ -342,7 +342,7 @@ export default function StudentClassDetailPage() {
 
                       <Link
                         to={`/student/assignments/${assignment.id}`}
-                        className="text-sm font-bold text-emerald-700"
+                        className="text-sm font-bold text-emerald"
                       >
                         Xem kết quả
                       </Link>
@@ -358,7 +358,7 @@ export default function StudentClassDetailPage() {
                   ) : (
                     <Link
                       to={`/student/assignments/${assignment.id}`}
-                      className="mt-4 inline-flex min-h-10 items-center rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white"
+                      className="mt-4 inline-flex min-h-10 items-center rounded-xl bg-emerald px-4 text-sm font-bold text-white"
                     >
                       Làm bài
                     </Link>
@@ -382,7 +382,7 @@ export default function StudentClassDetailPage() {
 
           <Link
             to={`/student/videos?class=${encodeURIComponent(classroom.id)}`}
-            className="text-sm font-bold text-emerald-700 hover:underline"
+            className="text-sm font-bold text-emerald hover:underline"
           >
             Xem tất cả
           </Link>
@@ -390,7 +390,7 @@ export default function StudentClassDetailPage() {
 
         {classVideos.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-line bg-white p-8 text-center">
-            <PlayCircle className="mx-auto size-9 text-secondary" />
+            <PlayCircle className="mx-auto size-9 text-muted" />
 
             <p className="mt-3 text-sm text-secondary">
               Lớp này chưa có video nào được xuất bản.
@@ -411,7 +411,7 @@ export default function StudentClassDetailPage() {
                   <h3 className="font-extrabold text-ink">{video.title}</h3>
 
                   {lesson && (
-                    <p className="mt-1 text-sm font-semibold text-emerald-700">
+                    <p className="mt-1 text-sm font-semibold text-emerald">
                       Bài {lesson.number}. {lesson.title}
                     </p>
                   )}
@@ -424,7 +424,7 @@ export default function StudentClassDetailPage() {
                     to={`/student/videos?class=${encodeURIComponent(
                       classroom.id,
                     )}`}
-                    className="mt-4 inline-flex min-h-10 items-center rounded-xl border border-emerald px-4 text-sm font-bold text-emerald-700"
+                    className="mt-4 inline-flex min-h-10 items-center rounded-xl border border-emerald px-4 text-sm font-bold text-emerald"
                   >
                     Xem video
                   </Link>

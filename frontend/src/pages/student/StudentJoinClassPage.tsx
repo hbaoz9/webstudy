@@ -233,7 +233,7 @@ export default function StudentJoinClassPage() {
             {joinState === "joined" && (
               <p
                 role="status"
-                className="rounded-lg bg-emerald/10 p-3 text-sm text-emerald-700"
+                className="rounded-lg bg-emerald/10 p-3 text-sm text-emerald"
               >
                 Bạn đã là thành viên của lớp học này.
               </p>
@@ -303,7 +303,7 @@ export default function StudentJoinClassPage() {
           </p>
         )}
         {success && (
-          <p role="status" className="text-sm text-emerald-700">
+          <p role="status" className="text-sm text-emerald">
             {success}
           </p>
         )}
@@ -314,7 +314,7 @@ export default function StudentJoinClassPage() {
           className={`min-h-12 rounded-xl px-6 py-3 text-sm font-bold transition ${
             isSubmitLocked
               ? "cursor-not-allowed bg-slate-200 text-slate-500"
-              : "bg-emerald-700 text-white hover:opacity-90"
+              : "bg-emerald text-white hover:opacity-90"
           }`}
         >
           {joinState === "joined"
@@ -331,7 +331,7 @@ export default function StudentJoinClassPage() {
         <div>
           <Link
             to="/student/classes"
-            className="text-sm font-bold text-emerald-700 hover:underline"
+            className="text-sm font-bold text-emerald hover:underline"
           >
             ← Quay về Lớp học của tôi
           </Link>

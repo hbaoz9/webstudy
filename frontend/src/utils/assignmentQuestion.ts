@@ -65,8 +65,6 @@ export function assignmentAnswerDraftKey(assignmentId: string, studentId: string
   return `webstudy-assignment-answer-draft-v1:${encodeURIComponent(studentId)}:${encodeURIComponent(assignmentId)}`;
 }
 
-export const ASSIGNMENT_DRAFT_CHANGED = "webstudy-assignment-draft-changed";
-
 export function assignmentQuestionSignature(assignment: AssignmentV2): string {
   return JSON.stringify([assignment.classroomId, assignment.questions.map((item) => {
     const question = toAssignmentQuestionV2(item);
@@ -162,7 +160,6 @@ export function saveAssignmentAnswerDraft(
     answers,
     updatedAt: new Date().toISOString(),
   }));
-  window.dispatchEvent(new Event(ASSIGNMENT_DRAFT_CHANGED));
 }
 
 export function hasAssignmentDraftAnswers(answers: AssignmentAnswersV2): boolean {
