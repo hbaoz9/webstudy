@@ -1,13 +1,22 @@
 # Dependencies
 node_modules/
+vendor/
 
 # Build output
 dist/
+coverage/
 build/
 .vite/
-coverage/
 *.tsbuildinfo
+frontend/vite.config.js
 frontend/vite.config.d.ts
+
+# Local editor files
+.vscode/*
+!.vscode/extensions.json
+frontend/vscode-extensions.txt
+backend/AGENTS.md
+backend/CLAUDE.md
 
 # Environment variables
 .env
@@ -16,22 +25,11 @@ frontend/vite.config.d.ts
 
 # Logs
 *.log
+*.sqlite
+.phpunit.result.cache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Laravel runtime output (backend is not implemented yet)
-backend/vendor/
-backend/node_modules/
-backend/storage/logs/
-backend/storage/framework/cache/data/
-backend/storage/app/private/
-backend/bootstrap/cache/*.php
-backend/public/storage/
-backend/database/*.sqlite
-backend/database/*.sqlite3
-backend/.phpunit.result.cache
-backend/.phpunit.cache/
 
 # OS / editor
 .DS_Store

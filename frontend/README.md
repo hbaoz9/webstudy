@@ -1,25 +1,18 @@
 # WebStudy Frontend
 
-Frontend demo của WebStudy sử dụng React 19, TypeScript, Vite 7, Tailwind CSS 3 và React Router. Giao diện hiện có cho học sinh và giáo viên; dữ liệu nghiệp vụ vẫn được quản lý phía trình duyệt bằng Context và `localStorage`.
+Frontend sử dụng React 19, TypeScript, Vite và Tailwind CSS. Ứng dụng có các khu vực Public, Giáo viên và Học sinh; router bảo vệ trang theo vai trò. API client kết nối Laravel cho các endpoint nền tảng, còn một số dữ liệu nghiệp vụ học tập vẫn dùng localStorage trong giai đoạn chuyển đổi backend.
 
-## Bắt đầu
-
-Từ thư mục `frontend/`:
+## Lệnh phát triển
 
 ```bash
 npm ci
 npm run dev
-```
-
-## Kiểm tra
-
-```bash
 npm test
 npm run build
 ```
 
-`npm run build` chạy TypeScript rồi tạo bản production trong `dist/`. `npm test` chạy các unit test bằng Vitest. Trên Windows PowerShell có thể dùng `npm.cmd` nếu lệnh `npm` bị chặn bởi chính sách thực thi.
+- `npm run dev`: chạy Vite development server.
+- `npm test`: chạy toàn bộ test Vitest một lần.
+- `npm run build`: kiểm tra TypeScript và tạo production bundle.
 
-## Dữ liệu demo
-
-Thông tin tài khoản, lớp, nội dung và bài làm được lưu cục bộ trên trình duyệt hiện tại. Không dùng dữ liệu thật hoặc bí mật trong môi trường demo; xóa dữ liệu trình duyệt có thể làm mất dữ liệu chưa được xuất ra nơi khác. Frontend chưa kết nối Backend Laravel.
+Không commit `dist/`, `coverage/`, file môi trường hoặc danh sách extension cục bộ.
