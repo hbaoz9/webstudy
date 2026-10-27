@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TeacherProfile extends Model
 {
@@ -23,5 +24,15 @@ class TeacherProfile extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function classrooms(): HasMany
+    {
+        return $this->hasMany(Classroom::class, 'teacher_id', 'user_id');
+    }
+
+    public function verificationSubmissions(): HasMany
+    {
+        return $this->hasMany(TeacherVerificationSubmission::class, 'teacher_id', 'user_id');
     }
 }

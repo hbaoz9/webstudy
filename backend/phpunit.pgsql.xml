@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap-postgres.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="PostgreSQL Constraints">
+            <file>tests/Feature/ClassroomPostgresConstraintsTest.php</file>
+            <file>tests/Feature/ClassroomMembershipPostgresConstraintsTest.php</file>
+            <file>tests/Feature/ClassroomServicePostgresTest.php</file>
+            <file>tests/Feature/TeacherVerificationPostgresTest.php</file>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="pgsql" force="true"/>
+        <env name="DB_DATABASE" value="webstudy_test" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="WEBSTUDY_PG_TEST" value="1" force="true"/>
+    </php>
+</phpunit>
