@@ -9,7 +9,7 @@ import {
   Link,
 } from "react-router-dom";
 
-import { useAuth, type AuthRole } from "../contexts/AuthContext";
+import { authHomePath, useAuth, type AuthRole } from "../contexts/AuthContext";
 
 import PublicLayout from "../layouts/PublicLayout";
 import TeacherLayout from "../layouts/TeacherLayout";
@@ -18,7 +18,6 @@ import VerifiedTeacherRoute from "./VerifiedTeacherRoute";
 
 const LandingPage = lazy(() => import("../pages/public/LandingPage"));
 const AuthPage = lazy(() => import("../pages/auth/AuthPage"));
-const RegisterSuccessPage = lazy(() => import("../pages/auth/RegisterSuccessPage"));
 
 const TeacherDashboardPage = lazy(() => import("../pages/teacher/TeacherDashboardPage"));
 const TeacherClassDetailPage = lazy(() => import("../pages/teacher/TeacherClassDetailPage"));
@@ -76,7 +75,7 @@ function RequireRole({ role }: { role: AuthRole }) {
     </main>;
   }
   if (!session) return <Navigate to={`/auth?role=${role}`} replace />;
-  if (session.role !== role) return <Navigate to={`/${session.role}`} replace />;
+  if (session.role !== role) return <Navigate to={authHomePath(session)} replace />;
   return <Outlet />;
 }
 
@@ -86,7 +85,7 @@ function NotFoundPage() {
     <p className="text-sm font-bold text-secondary">404</p>
     <h1 className="mt-2 text-xl font-extrabold">Không tìm thấy trang</h1>
     <p className="mt-3 text-sm leading-6 text-secondary">Đường dẫn có thể đã thay đổi hoặc không còn tồn tại. Bạn có thể quay về để tiếp tục sử dụng WebStudy.</p>
-    <Link to={session ? `/${session.role}` : "/"} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white">{session ? "Về Tổng quan" : "Về trang giới thiệu"}</Link>
+    <Link to={session ? authHomePath(session) : "/"} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white">{session ? "Về khu vực của tôi" : "Về trang giới thiệu"}</Link>
   </main>;
 }
 
@@ -101,12 +100,8 @@ export default function AppRoutes() {
       {/* Authentication */}
       <Route path="/auth" element={<AuthPage />} />
 
-      <Route element={<RequireRole role="student" />}>
-        <Route path="/auth/register/success/student" element={<RegisterSuccessPage role="student" />} />
-      </Route>
-      <Route element={<RequireRole role="teacher" />}>
-        <Route path="/auth/register/success/teacher" element={<RegisterSuccessPage role="teacher" />} />
-      </Route>
+      <Route path="/auth/register/success/student" element={<Navigate to="/student/dashboard" replace />} />
+      <Route path="/auth/register/success/teacher" element={<Navigate to="/teacher/verification" replace />} />
 
       {/* Teacher */}
       <Route element={<RequireRole role="teacher" />}>
@@ -159,7 +154,6 @@ export default function AppRoutes() {
       <Route path="student" element={<StudentLayout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
 
-        {/* Chưa xây chức năng thật */}
         <Route path="dashboard" element={<StudentDashboardPage />} />
 
         <Route path="classes" element={<StudentClassesPage />} />

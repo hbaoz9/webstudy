@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { VerificationBanner } from "../../components/teacher/VerificationBanner";
 import { useTeacherData } from "../../contexts/TeacherDataContext";
 import { useTeacherAssignments } from "../../contexts/TeacherAssignmentsContext";
-import { useTeacherAccount } from "../../contexts/TeacherAccountContext";
+import { useAuth } from "../../contexts/AuthContext";
 
 function formatDateTime(value: string) {
   const date = new Date(value);
@@ -55,8 +55,8 @@ export default function TeacherDashboardPage() {
   const { classrooms, getRosterEntries, getJoinRequests } = useTeacherData();
   const { assignments, submissions, submissionStorageStatus } =
     useTeacherAssignments();
-  const { teacherAccount } = useTeacherAccount();
-  const isVerified = teacherAccount.verificationStatus === "verified";
+  const { session } = useAuth();
+  const isVerified = session?.teacherVerificationStatus === "verified";
   const [now, setNow] = useState(() => Date.now());
   const activeClassrooms = isVerified
     ? classrooms.filter((item) => item.status !== "archived")

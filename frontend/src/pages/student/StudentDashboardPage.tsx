@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, BookOpen, GraduationCap, PlayCircle, Clock3, CircleCheckBig } from "lucide-react";
 import { useStudentAccount } from "../../contexts/StudentAccountContext";
+import { RegistrationNotice } from "../../components/common/RegistrationNotice";
 import { useTeacherAssignments } from "../../contexts/TeacherAssignmentsContext";
 import { useStudentClassMemberships } from "../../hooks/useStudentClassMemberships";
 import { geo10Lessons } from "../../data/geo10Curriculum";
@@ -119,6 +120,7 @@ export default function StudentDashboardPage() {
 
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-7 [overflow-wrap:anywhere]">
+      <RegistrationNotice role="student" />
       <header className="rounded-3xl bg-ink p-6 text-white shadow-card sm:p-8">
         <p className="text-sm font-semibold text-emerald">WebStudy · Địa lí 10</p>
         <h1 className="mt-3 text-2xl font-extrabold sm:text-3xl">{hasStudentProfile ? `Chào ${student.name} 👋` : "Chào bạn 👋"}</h1>
@@ -130,8 +132,11 @@ export default function StudentDashboardPage() {
 
       {activeMemberships.length === 0 ? <section className="rounded-2xl border border-dashed border-line bg-white p-6">
         <h2 className="text-xl font-extrabold text-ink">{!hasStudentProfile ? "Bắt đầu học cùng lớp" : pendingMemberships.length > 0 ? "Đang chờ tham gia lớp" : archivedMemberships.length > 0 ? "Hiện không có lớp đang hoạt động" : "Bạn chưa tham gia lớp học nào"}</h2>
-        <p className="mt-2 text-sm leading-6 text-secondary">{pendingMemberships.length > 0 ? "Yêu cầu của bạn đang chờ giáo viên duyệt hoặc liên kết với danh sách lớp. Xem trạng thái trong lớp học của tôi." : archivedMemberships.length > 0 ? "Lớp của bạn đã được lưu trữ. Bạn có thể xem lại thông tin trong danh sách lớp học." : "Tham gia bằng mã lớp do giáo viên cung cấp để xem bài tập và nội dung học tập."}</p>
-        <Link to={pendingMemberships.length > 0 || archivedMemberships.length > 0 ? "/student/classes" : "/student/join-class"} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald px-5 text-sm font-bold text-white">{pendingMemberships.length > 0 || archivedMemberships.length > 0 ? "Xem lớp học của tôi" : "Tham gia lớp học"}<ArrowRight className="size-4" /></Link>
+        <p className="mt-2 text-sm leading-6 text-secondary">{pendingMemberships.length > 0 ? "Yêu cầu của bạn đang chờ giáo viên duyệt hoặc liên kết với danh sách lớp. Xem trạng thái trong lớp học của tôi." : archivedMemberships.length > 0 ? "Lớp của bạn đã được lưu trữ. Bạn có thể xem lại thông tin trong danh sách lớp học." : "Có mã lớp từ giáo viên? Hãy nhập mã để tham gia. Bạn vẫn có thể khám phá học liệu công khai khi chưa vào lớp."}</p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link to={pendingMemberships.length > 0 || archivedMemberships.length > 0 ? "/student/classes" : "/student/join-class"} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald px-5 text-sm font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald">{pendingMemberships.length > 0 || archivedMemberships.length > 0 ? "Xem lớp học của tôi" : "Nhập mã lớp"}<ArrowRight className="size-4" /></Link>
+          <Link to="/student/lessons" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line px-5 text-sm font-bold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald">Khám phá bài học</Link>
+        </div>
       </section> : <>
         <section aria-labelledby="student-todo-heading" className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">

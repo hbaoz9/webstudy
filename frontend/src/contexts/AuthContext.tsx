@@ -18,6 +18,14 @@ export type AuthSession = {
   email: string;
   teacherVerificationStatus: AuthUser["teacher_verification_status"];
 };
+
+export function authHomePath(session: AuthSession): string {
+  return session.role === "student"
+    ? "/student/dashboard"
+    : session.teacherVerificationStatus === "verified"
+      ? "/teacher/dashboard"
+      : "/teacher/verification";
+}
 type AuthContextValue = {
   session: AuthSession | null;
   status: "loading" | "ready" | "error";

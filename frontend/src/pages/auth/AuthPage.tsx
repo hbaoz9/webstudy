@@ -1,7 +1,7 @@
 import ContourBackground from "../../components/common/ContourBackground";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { useAuth, type AuthRole } from "../../contexts/AuthContext";
+import { authHomePath, useAuth, type AuthRole } from "../../contexts/AuthContext";
 import { ApiError } from "../../service/api/client";
 import { BookOpenCheck, GraduationCap, ArrowLeft, Compass } from "lucide-react";
 
@@ -57,9 +57,10 @@ export default function AuthPage() {
         ? await registerAccount(role, normalizedName, normalizedEmail, password, confirmation)
         : await signIn(normalizedEmail, password);
       navigatingAfterSubmit.current = true;
-      navigate(tab === "register"
-        ? `/auth/register/success/${authenticated.role}`
-        : `/${authenticated.role}`, { replace: true });
+      navigate(authHomePath(authenticated), {
+        replace: true,
+        state: tab === "register" ? { registrationComplete: true } : null,
+      });
     } catch (cause) {
       const validation = cause instanceof ApiError
         ? Object.values(cause.errors).flat()[0]
@@ -71,7 +72,10 @@ export default function AuthPage() {
   };
 
   if (session && !pending && !navigatingAfterSubmit.current)
-    return <Navigate to={`/${session.role}`} replace />;
+    return <Navigate to={authHomePath(session)} replace />;
+
+  if (status === "loading")
+    return <main role="status" className="grid min-h-dvh place-items-center bg-canvas px-4 text-sm text-secondary">Đang kiểm tra phiên đăng nhập…</main>;
 
   return (
     <main className="relative isolate min-h-dvh overflow-hidden bg-canvas">
@@ -265,7 +269,6 @@ export default function AuthPage() {
                   />
                 </label>
               )}
-              {status === "loading" && <p role="status" className="text-sm text-secondary">Đang kiểm tra phiên đăng nhập...</p>}
               {status === "error" && (
                 <button type="button" onClick={() => void refreshSession()} className="text-sm font-semibold text-emerald">
                   Thử kiểm tra phiên lại
@@ -281,7 +284,7 @@ export default function AuthPage() {
               )}
               <button
                 type="submit"
-                disabled={pending || status === "loading"}
+                disabled={pending}
                 className="min-h-12 w-full rounded-full bg-emerald px-5 text-sm font-bold text-white hover:bg-emerald/90 disabled:opacity-50"
               >
                 {pending

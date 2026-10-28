@@ -8,17 +8,11 @@ import {
   Link,
 } from 'react-router-dom';
 
-import {
-  useTeacherAccount,
-} from '../../contexts/TeacherAccountContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 export function VerificationBanner() {
-  const {
-    teacherAccount,
-  } = useTeacherAccount();
-
-  const status =
-    teacherAccount.verificationStatus;
+  const { session } = useAuth();
+  const status = session?.teacherVerificationStatus ?? 'unverified';
 
   if (status === 'verified') {
     return null;
@@ -45,15 +39,14 @@ export function VerificationBanner() {
   const description = isPending
     ? 'Bạn sẽ có thể tạo và quản lý lớp học sau khi hồ sơ được duyệt.'
     : isRejected
-      ? teacherAccount.rejectionReason ??
-        'Vui lòng kiểm tra thông tin và gửi lại hồ sơ.'
-      : 'Hãy hoàn tất xác minh để tạo và quản lý lớp học.';
+      ? 'Xem lý do xét duyệt và thông tin về bước gửi lại minh chứng.'
+      : 'Cần xác minh để tạo và quản lý lớp học. Xem các bước tiếp theo.';
 
   const actionLabel = isPending
     ? 'Xem trạng thái'
     : isRejected
-      ? 'Gửi lại hồ sơ'
-      : 'Xác minh ngay';
+      ? 'Xem trạng thái'
+      : 'Xem hướng dẫn';
 
   return (
     <section
