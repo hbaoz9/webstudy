@@ -15,16 +15,24 @@ class ClassroomApiTest extends TestCase
     {
         $this->getJson('/api/teacher/classrooms')->assertUnauthorized();
         $this->getJson('/api/student/classrooms')->assertUnauthorized();
+        $missingId = '00000000-0000-4000-8000-000000000000';
+        $this->putJson("/api/teacher/classrooms/$missingId", ['name' => 'No session', 'academic_year' => '2026-2027'])->assertUnauthorized();
+        $this->postJson("/api/teacher/classrooms/$missingId/archive")->assertUnauthorized();
         $classroom = $this->createClassroom();
         $otherTeacher = $this->teacher();
         $student = User::factory()->create()->refresh();
         $this->actingAs($otherTeacher)->getJson('/api/teacher/classrooms')->assertForbidden();
+        $this->putJson("/api/teacher/classrooms/{$classroom->id}", ['name' => 'Unverified', 'academic_year' => '2026-2027'])->assertForbidden();
+        $this->postJson("/api/teacher/classrooms/{$classroom->id}/archive")->assertForbidden();
         $this->verify($otherTeacher);
         $this->getJson("/api/teacher/classrooms/{$classroom->id}")->assertForbidden();
+        $this->putJson("/api/teacher/classrooms/{$classroom->id}", ['name' => 'Wrong owner', 'academic_year' => '2026-2027'])->assertForbidden();
         $this->postJson("/api/teacher/classrooms/{$classroom->id}/archive")->assertForbidden();
         $this->getJson("/api/teacher/classrooms/{$classroom->id}/roster")->assertForbidden();
         $this->getJson("/api/teacher/classrooms/{$classroom->id}/join-requests")->assertForbidden();
         $this->actingAs($student)->getJson('/api/teacher/classrooms')->assertForbidden();
+        $this->putJson("/api/teacher/classrooms/{$classroom->id}", ['name' => 'Student edit', 'academic_year' => '2026-2027'])->assertForbidden();
+        $this->postJson("/api/teacher/classrooms/{$classroom->id}/archive")->assertForbidden();
         $this->getJson("/api/student/classrooms/{$classroom->id}")->assertForbidden();
         $this->actingAs($classroom->teacher->user)->getJson('/api/student/classrooms')->assertForbidden();
     }
@@ -46,6 +54,8 @@ class ClassroomApiTest extends TestCase
             'name' => '10A2', 'academic_year' => '2026-2027', 'teacher_id' => 999,
             'status' => 'archived',
         ])->assertOk()->assertJsonPath('data.name', '10A2')->assertJsonPath('data.status', 'active');
+        $this->putJson("/api/teacher/classrooms/$id", ['name' => '', 'academic_year' => 'invalid'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['name', 'academic_year']);
         $this->getJson('/api/teacher/classrooms')->assertOk()->assertJsonCount(1, 'data');
         $this->postJson("/api/teacher/classrooms/$id/roster/import", ['rows' => []])->assertUnprocessable();
         $this->postJson("/api/teacher/classrooms/$id/roster/import", ['rows' => [
@@ -67,6 +77,9 @@ class ClassroomApiTest extends TestCase
             ->assertCreated()->assertJsonPath('data.status', 'active');
         $this->getJson("/api/teacher/classrooms/$id/memberships")->assertOk()->assertJsonCount(1, 'data');
         $this->postJson("/api/teacher/classrooms/$id/archive")->assertOk()->assertJsonPath('data.status', 'archived');
+        $this->getJson("/api/teacher/classrooms/$id")->assertOk()->assertJsonPath('data.status', 'archived');
+        $this->postJson("/api/teacher/classrooms/$id/archive")->assertUnprocessable();
+        $this->putJson("/api/teacher/classrooms/$id", ['name' => '10A3', 'academic_year' => '2026-2027'])->assertUnprocessable();
         $this->assertDatabaseHas('class_memberships', ['student_id' => $student->id, 'status' => 'left']);
         $this->assertDatabaseCount('class_memberships', 1);
     }

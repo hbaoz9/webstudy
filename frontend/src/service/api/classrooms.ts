@@ -48,3 +48,13 @@ export async function createTeacherClassroom(input: CreateClassroomInput): Promi
   const response = await apiRequest<{ data: TeacherClassroom }>("/teacher/classrooms", "POST", input);
   return response.data;
 }
+
+export async function updateTeacherClassroom(id: string, input: CreateClassroomInput): Promise<TeacherClassroom> {
+  const response = await apiRequest<{ data: TeacherClassroom }>(`/teacher/classrooms/${encodeURIComponent(id)}`, "PUT", input);
+  return response.data;
+}
+
+export async function archiveTeacherClassroom(id: string): Promise<TeacherClassroom> {
+  const response = await apiRequest<{ data: TeacherClassroom }>(`/teacher/classrooms/${encodeURIComponent(id)}/archive`, "POST");
+  return response.data;
+}

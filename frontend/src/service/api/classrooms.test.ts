@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTeacherClassroom, getTeacherClassroom, listTeacherClassrooms } from "./classrooms";
+import { archiveTeacherClassroom, createTeacherClassroom, getTeacherClassroom, listTeacherClassrooms, updateTeacherClassroom } from "./classrooms";
 
 const classroom = { id: "class-uuid", name: "10A1", code: "ABC234", academicYear: "2026-2027", description: null,
   coverImage: null, status: "active", createdAt: "2026-10-28T00:00:00Z", studentCount: 0 };
@@ -41,5 +41,24 @@ describe("Teacher Classroom API contract", () => {
   it("rejects an API failure rather than returning prototype classrooms", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     await expect(listTeacherClassrooms()).rejects.toThrow("Không thể kết nối máy chủ");
+  });
+
+  it("updates only supported fields and archives through the backend", async () => {
+    const archived = { ...classroom, status: "archived" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({ data: classroom }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({ data: archived }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const input = { name: "10A1", academic_year: "2026-2027", description: "Updated", cover_image_path: null };
+    await expect(updateTeacherClassroom(classroom.id, input)).resolves.toEqual(classroom);
+    await expect(archiveTeacherClassroom(classroom.id)).resolves.toEqual(archived);
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/teacher/classrooms/class-uuid");
+    expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(input);
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/teacher/classrooms/class-uuid/archive");
+    expect(fetchMock.mock.calls[3][1].method).toBe("POST");
   });
 });
