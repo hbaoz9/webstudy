@@ -21,7 +21,7 @@ const AuthPage = lazy(() => import("../pages/auth/AuthPage"));
 const TeacherVerificationsPage = lazy(() => import("../pages/admin/TeacherVerificationsPage"));
 
 const TeacherDashboardPage = lazy(() => import("../pages/teacher/TeacherDashboardPage"));
-const TeacherClassDetailPage = lazy(() => import("../pages/teacher/TeacherClassDetailPage"));
+const TeacherClassDetailPage = lazy(() => import("../pages/teacher/TeacherClassCoreDetailPage"));
 const TeacherCreateClassPage = lazy(() => import("../pages/teacher/TeacherCreateClassPage"));
 const TeacherClassesPage = lazy(() => import("../pages/teacher/TeacherClassesPage"));
 const TeacherVerificationPage = lazy(() => import("../pages/teacher/TeacherVerificationPage"));

@@ -1,0 +1,45 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTeacherClassroom, getTeacherClassroom, listTeacherClassrooms } from "./classrooms";
+
+const classroom = { id: "class-uuid", name: "10A1", code: "ABC234", academicYear: "2026-2027", description: null,
+  coverImage: null, status: "active", createdAt: "2026-10-28T00:00:00Z", studentCount: 0 };
+const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
+  status, headers: { "Content-Type": "application/json" },
+});
+
+describe("Teacher Classroom API contract", () => {
+  beforeEach(() => {
+    vi.stubGlobal("document", { cookie: "XSRF-TOKEN=test-token" });
+    vi.stubGlobal("window", new EventTarget());
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it("loads every backend page without local classroom data", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(json({ data: [classroom], meta: { last_page: 2 } }))
+      .mockResolvedValueOnce(json({ data: [{ ...classroom, id: "second" }], meta: { last_page: 2 } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listTeacherClassrooms()).resolves.toMatchObject([{ id: "class-uuid" }, { id: "second" }]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/teacher/classrooms?page=1", "/api/teacher/classrooms?page=2"]);
+  });
+
+  it("uses the backend ID for detail and sends only allowed creation fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(json({ data: classroom }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({ data: classroom }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getTeacherClassroom("class-uuid")).resolves.toEqual(classroom);
+    await expect(createTeacherClassroom({ name: "10A1", academic_year: "2026-2027", description: null, cover_image_path: null }))
+      .resolves.toEqual(classroom);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/teacher/classrooms/class-uuid");
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+      name: "10A1", academic_year: "2026-2027", description: null, cover_image_path: null,
+    });
+  });
+
+  it("rejects an API failure rather than returning prototype classrooms", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+    await expect(listTeacherClassrooms()).rejects.toThrow("Không thể kết nối máy chủ");
+  });
+});

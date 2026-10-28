@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { BookOpenText, Clock3, ListPlus, Plus, UsersRound } from "lucide-react";
+import { BookOpenText, Clock3, ListPlus, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { VerificationBanner } from "../../components/teacher/VerificationBanner";
 import { useTeacherData } from "../../contexts/TeacherDataContext";
 import { useTeacherAssignments } from "../../contexts/TeacherAssignmentsContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { listTeacherClassrooms, type TeacherClassroom } from "../../service/api/classrooms";
 
 function formatDateTime(value: string) {
   const date = new Date(value);
@@ -52,12 +53,27 @@ function deadlineLabel(value: string | undefined, now: number) {
 }
 
 export default function TeacherDashboardPage() {
-  const { classrooms, getRosterEntries, getJoinRequests } = useTeacherData();
+  const { classrooms, getRosterEntries } = useTeacherData();
   const { assignments, submissions, submissionStorageStatus } =
     useTeacherAssignments();
   const { session } = useAuth();
   const isVerified = session?.teacherVerificationStatus === "verified";
   const [now, setNow] = useState(() => Date.now());
+  const [apiClassrooms, setApiClassrooms] = useState<TeacherClassroom[]>([]);
+  const [classroomsLoading, setClassroomsLoading] = useState(true);
+  const [classroomsError, setClassroomsError] = useState("");
+
+  useEffect(() => {
+    if (!isVerified) return;
+    let active = true;
+    setClassroomsLoading(true);
+    setClassroomsError("");
+    void listTeacherClassrooms()
+      .then((items) => { if (active) setApiClassrooms(items.filter((item) => item.status === "active")); })
+      .catch((cause) => { if (active) setClassroomsError(cause instanceof Error ? cause.message : "Không thể tải danh sách lớp."); })
+      .finally(() => { if (active) setClassroomsLoading(false); });
+    return () => { active = false; };
+  }, [isVerified]);
   const activeClassrooms = isVerified
     ? classrooms.filter((item) => item.status !== "archived")
     : [];
@@ -179,39 +195,11 @@ export default function TeacherDashboardPage() {
         b.latestAt - a.latestAt ||
         a.assignment.title.localeCompare(b.assignment.title, "vi"),
     );
-  const pendingClasses = activeClassrooms
-    .map((classroom) => ({
-      classroom,
-      count: getJoinRequests(classroom.id).filter(
-        (item) => item.status === "pending",
-      ).length,
-    }))
-    .filter((item) => item.count > 0);
-  const pendingRequests = pendingClasses.reduce(
-    (total, item) => total + item.count,
-    0,
-  );
   const upcomingCount = attentionRows.filter(
     (row) => row.deadline > now,
   ).length;
   const overdueCount = attentionRows.length - upcomingCount;
   const workCards = [
-    ...(pendingClasses.length
-      ? [
-          {
-            title: "yêu cầu vào lớp",
-            count: pendingRequests,
-            icon: UsersRound,
-            description:
-              pendingClasses.length > 1
-                ? `Trong ${pendingClasses.length} lớp · bắt đầu với ${pendingClasses[0].classroom.name}`
-                : pendingClasses[0].classroom.name,
-            action: `Duyệt tại ${pendingClasses[0].classroom.name} →`,
-            to: `/teacher/classes/${pendingClasses[0].classroom.id}#join-requests`,
-            tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-          },
-        ]
-      : []),
     ...(attentionRows.length
       ? [
           {
@@ -265,7 +253,7 @@ export default function TeacherDashboardPage() {
             </h2>
             {workCards.length === 0 ? (
               <p className="rounded-2xl bg-white p-5 text-sm text-secondary shadow-card">
-                Hiện không có yêu cầu chờ duyệt hoặc bài tập cần chú ý.
+                Hiện không có bài tập cần chú ý.
               </p>
             ) : (
               <div className="grid gap-4 md:grid-cols-3">
@@ -294,15 +282,6 @@ export default function TeacherDashboardPage() {
                     >
                       {card.action}
                     </Link>
-                    {card.title === "yêu cầu vào lớp" &&
-                      pendingClasses.length > 1 && (
-                        <Link
-                          to="/teacher/classes"
-                          className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-800"
-                        >
-                          Xem các lớp →
-                        </Link>
-                      )}
                   </article>
                 ))}
               </div>
@@ -562,10 +541,14 @@ export default function TeacherDashboardPage() {
                     to="/teacher/classes"
                     className="inline-flex min-h-11 items-center text-sm font-bold text-emerald-800"
                   >
-                    Xem tất cả ({activeClassrooms.length}) →
+                    Xem tất cả{!classroomsLoading && !classroomsError ? ` (${apiClassrooms.length})` : ""} →
                   </Link>
                 </div>
-                {activeClassrooms.length === 0 ? (
+                {classroomsLoading ? (
+                  <p role="status" className="rounded-2xl bg-white p-4 text-sm text-secondary shadow-card">Đang tải lớp học…</p>
+                ) : classroomsError ? (
+                  <p role="alert" className="rounded-2xl bg-white p-4 text-sm text-red-700 shadow-card">{classroomsError} <Link to="/teacher/classes" className="font-bold underline">Mở danh sách lớp</Link></p>
+                ) : apiClassrooms.length === 0 ? (
                   <p className="rounded-2xl bg-white p-4 text-sm text-secondary shadow-card">
                     Chưa có lớp đang hoạt động.{" "}
                     <Link
@@ -577,14 +560,7 @@ export default function TeacherDashboardPage() {
                   </p>
                 ) : (
                   <div className="overflow-hidden rounded-2xl bg-white shadow-card">
-                    {activeClassrooms.slice(0, 6).map((classroom) => {
-                      const requests = getJoinRequests(classroom.id).filter(
-                        (item) => item.status === "pending",
-                      ).length;
-                      const openAssignmentCount = openAssignmentRows.filter(
-                        (row) => row.assignment.classroomId === classroom.id,
-                      ).length;
-                      return (
+                    {apiClassrooms.slice(0, 6).map((classroom) => (
                         <article
                           key={classroom.id}
                           className="flex min-w-0 items-center gap-2 border-b border-line px-3 py-2 last:border-b-0 sm:px-4"
@@ -599,23 +575,11 @@ export default function TeacherDashboardPage() {
                               {classroom.name}
                             </h3>
                             <p className="mt-1 truncate text-[13px] text-secondary">
-                              {classroom.studentCount} học sinh
-                              {" · "}
-                              {openAssignmentCount} bài tập đang mở
+                              {classroom.studentCount} học sinh · Năm học {classroom.academicYear}
                             </p>
                           </Link>
-                          {requests > 0 && (
-                            <Link
-                              to={`/teacher/classes/${classroom.id}#join-requests`}
-                              aria-label={`Duyệt ${requests} yêu cầu vào lớp ${classroom.name}`}
-                              className="inline-flex min-h-11 shrink-0 items-center rounded-lg bg-amber-50 px-2 text-[13px] font-bold text-amber-900 hover:bg-amber-100"
-                            >
-                              {requests} yêu cầu →
-                            </Link>
-                          )}
                         </article>
-                      );
-                    })}
+                    ))}
                   </div>
                 )}
               </section>

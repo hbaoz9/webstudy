@@ -3,7 +3,7 @@ import type { Classroom } from "../../types/teacher";
 import { Archive } from "lucide-react";
 
 type TeacherClassCardProps = {
-  classroom: Classroom;
+  classroom: Pick<Classroom, "id" | "name" | "code" | "studentCount" | "status"> & { coverImage: string | null };
 };
 
 export function TeacherClassCard({ classroom }: TeacherClassCardProps) {

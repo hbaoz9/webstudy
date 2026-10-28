@@ -1,26 +1,19 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
-import { ArrowLeft, ImageIcon, RefreshCw, School } from "lucide-react";
+import { ArrowLeft, ImageIcon, School } from "lucide-react";
 
 import { useNavigate } from "react-router-dom";
 
-import { useTeacherData } from "../../contexts/TeacherDataContext";
-
-import { ClassCoverPicker } from "../../components/teacher/ClassCoverPicker";
-
-import type { Classroom } from "../../types/teacher";
+import { ApiError } from "../../service/api/client";
+import { createTeacherClassroom } from "../../service/api/classrooms";
 
 import {
-  generateUniqueClassCode,
   getAcademicYearOptions,
-  getComparableClassName,
   normalizeClassName,
 } from "../../utils/classroom";
 
 export default function TeacherCreateClassPage() {
   const navigate = useNavigate();
-
-  const { classrooms, addClassroom } = useTeacherData();
 
   const academicYearOptions = getAcademicYearOptions();
 
@@ -30,19 +23,13 @@ export default function TeacherCreateClassPage() {
 
   const [description, setDescription] = useState("");
 
-  const [isProcessingCover, setIsProcessingCover] = useState(false);
-
-  const [selectedCoverImage, setSelectedCoverImage] = useState("");
-
-  const [isCoverValid, setIsCoverValid] = useState(true);
-
-  const [classCode, setClassCode] = useState(() =>
-    generateUniqueClassCode(classrooms.map((classroom) => classroom.code)),
-  );
+  const [coverImageUrl, setCoverImageUrl] = useState("");
 
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLock = useRef(false);
 
   const normalizedClassName = normalizeClassName(classNameValue);
 
@@ -50,84 +37,54 @@ export default function TeacherCreateClassPage() {
     ? `Lớp ${normalizedClassName}`
     : "Lớp chưa đặt tên";
 
-  const handleRegenerateCode = () => {
-    setClassCode(
-      generateUniqueClassCode(classrooms.map((classroom) => classroom.code)),
-    );
-  };
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitLock.current) return;
     setFormError("");
-
-    if (isProcessingCover) {
-      return;
-    }
-
-    if (!isCoverValid) {
-      setFormError("Vui lòng kiểm tra lại ảnh bìa.");
-
-      return;
-    }
+    setFieldErrors({});
 
     if (normalizedClassName.length < 2) {
-      setFormError("Tên lớp phải có ít nhất 2 ký tự.");
+      setFieldErrors({ name: "Tên lớp phải có ít nhất 2 ký tự." });
 
       return;
     }
 
-    if (normalizedClassName.length > 30) {
-      setFormError("Tên lớp không được vượt quá 30 ký tự.");
+    if (normalizedClassName.length > 255) {
+      setFieldErrors({ name: "Tên lớp không được vượt quá 255 ký tự." });
 
       return;
     }
 
-    const duplicateClass = classrooms.some(
-      (classroom) =>
-        getComparableClassName(classroom.name) ===
-          getComparableClassName(normalizedClassName) &&
-        classroom.academicYear === academicYear,
-    );
-
-    if (duplicateClass) {
-      setFormError(
-        `Lớp ${normalizedClassName} đã tồn tại trong năm học ${academicYear}.`,
-      );
-
+    const coverUrl = coverImageUrl.trim();
+    if (coverUrl && (!/^https?:\/\//i.test(coverUrl) || coverUrl.length > 255)) {
+      setFieldErrors({ cover_image_path: "Liên kết ảnh bìa phải là URL http(s) và không quá 255 ký tự." });
       return;
     }
 
+    submitLock.current = true;
     setIsSubmitting(true);
-
-    const classroomId =
-      typeof window.crypto.randomUUID === "function"
-        ? `class-${window.crypto.randomUUID()}`
-        : `class-${Date.now()}`;
-
-    const newClassroom: Classroom = {
-      id: classroomId,
-      name: `Lớp ${normalizedClassName}`,
-      code: classCode,
-
-      studentCount: 0,
-      completionRate: 0,
-
-      coverImage: selectedCoverImage,
-
-      academicYear,
-
-      description: description.trim(),
-
-      status: "active",
-
-      createdAt: new Date().toISOString(),
-    };
-
-    addClassroom(newClassroom);
-
-    navigate(`/teacher/classes/${classroomId}`, {
-      replace: true,
-    });
+    try {
+      const classroom = await createTeacherClassroom({
+        name: normalizedClassName,
+        academic_year: academicYear,
+        description: description.trim() || null,
+        cover_image_path: coverUrl || null,
+      });
+      navigate(`/teacher/classes/${classroom.id}`, { replace: true });
+    } catch (cause) {
+      if (cause instanceof ApiError && Object.keys(cause.errors).length > 0) {
+        const errors = Object.fromEntries(Object.entries(cause.errors).map(([field, messages]) => [field, messages[0]]));
+        setFieldErrors(errors);
+        if (Object.keys(errors).some((field) => !["name", "academic_year", "description", "cover_image_path"].includes(field))) {
+          setFormError(Object.values(errors)[0]);
+        }
+      } else {
+        setFormError(cause instanceof Error ? cause.message : "Không thể tạo lớp. Vui lòng thử lại.");
+      }
+    } finally {
+      submitLock.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -145,8 +102,7 @@ export default function TeacherCreateClassPage() {
         <h1 className="text-2xl font-extrabold text-ink">Tạo lớp học mới</h1>
 
         <p className="mt-2 text-sm text-secondary">
-          Thiết lập thông tin cơ bản. Sau khi tạo lớp, bạn có thể nhập danh sách
-          học sinh bằng Excel.
+          Thiết lập thông tin cơ bản. Mã lớp sẽ được hệ thống tạo sau khi lưu.
         </p>
       </div>
 
@@ -170,14 +126,15 @@ export default function TeacherCreateClassPage() {
                 value={classNameValue}
                 onChange={(event) => {
                   setClassNameValue(event.target.value);
-
-                  setFormError("");
+                  setFieldErrors((current) => ({ ...current, name: "" }));
                 }}
                 placeholder="Ví dụ: 10A1"
-                maxLength={30}
+                maxLength={255}
+                aria-invalid={Boolean(fieldErrors.name)}
                 className="min-h-12 w-full rounded-xl border border-line bg-white pl-12 pr-4 text-sm text-ink outline-none transition placeholder:text-muted focus:border-emerald focus:ring-2 focus:ring-emerald/10"
               />
             </div>
+            {fieldErrors.name && <p role="alert" className="mt-2 text-sm text-red-700">{fieldErrors.name}</p>}
 
             <p className="mt-2 text-xs text-muted">
               Bạn có thể nhập “10A1” hoặc “Lớp 10A1”, hệ thống sẽ tự chuẩn hóa.
@@ -195,10 +152,10 @@ export default function TeacherCreateClassPage() {
             <select
               id="academic-year"
               value={academicYear}
+              aria-invalid={Boolean(fieldErrors.academic_year)}
               onChange={(event) => {
                 setAcademicYear(event.target.value);
-
-                setFormError("");
+                setFieldErrors((current) => ({ ...current, academic_year: "" }));
               }}
               className="mt-2 min-h-12 w-full rounded-xl border border-line bg-white px-4 text-sm text-ink outline-none transition focus:border-emerald focus:ring-2 focus:ring-emerald/10"
             >
@@ -208,6 +165,7 @@ export default function TeacherCreateClassPage() {
                 </option>
               ))}
             </select>
+            {fieldErrors.academic_year && <p role="alert" className="mt-2 text-sm text-red-700">{fieldErrors.academic_year}</p>}
           </div>
 
           <div className="mt-5">
@@ -227,12 +185,14 @@ export default function TeacherCreateClassPage() {
             <textarea
               id="class-description"
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event) => { setDescription(event.target.value); setFieldErrors((current) => ({ ...current, description: "" })); }}
               rows={4}
               maxLength={200}
+              aria-invalid={Boolean(fieldErrors.description)}
               placeholder="Ví dụ: Lớp ôn thi THPT Quốc gia môn Địa lý."
               className="mt-2 w-full resize-none rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink outline-none transition placeholder:text-muted focus:border-emerald focus:ring-2 focus:ring-emerald/10"
             />
+            {fieldErrors.description && <p role="alert" className="mt-2 text-sm text-red-700">{fieldErrors.description}</p>}
           </div>
 
           <div className="mt-5">
@@ -244,12 +204,10 @@ export default function TeacherCreateClassPage() {
               <span className="text-xs text-muted">Không bắt buộc</span>
             </div>
 
-            <ClassCoverPicker
-              value={selectedCoverImage}
-              onChange={setSelectedCoverImage}
-              onValidityChange={setIsCoverValid}
-              onProcessingChange={setIsProcessingCover}
-            />
+            <label htmlFor="cover-url" className="mt-3 block text-xs text-secondary">Liên kết ảnh công khai (http/https)</label>
+            <input id="cover-url" type="url" maxLength={255} value={coverImageUrl} onChange={(event) => { setCoverImageUrl(event.target.value); setFieldErrors((current) => ({ ...current, cover_image_path: "" })); }} placeholder="https://example.com/anh-bia.jpg" aria-invalid={Boolean(fieldErrors.cover_image_path)} className="mt-2 min-h-12 w-full rounded-xl border border-line bg-white px-4 text-sm text-ink outline-none transition placeholder:text-muted focus:border-emerald focus:ring-2 focus:ring-emerald/10" />
+            <p className="mt-2 text-xs text-muted">Ảnh tải từ máy chưa được lưu qua API lớp học.</p>
+            {fieldErrors.cover_image_path && <p role="alert" className="mt-2 text-sm text-red-700">{fieldErrors.cover_image_path}</p>}
           </div>
         </section>
 
@@ -261,9 +219,9 @@ export default function TeacherCreateClassPage() {
 
           <div className="mt-4 overflow-hidden rounded-xl border border-line">
             <div className="relative min-h-40">
-              {selectedCoverImage ? (
+              {coverImageUrl.trim() ? (
                 <img
-                  src={selectedCoverImage}
+                  src={coverImageUrl.trim()}
                   alt="Xem trước ảnh bìa"
                   className="absolute inset-0 size-full object-cover"
                 />
@@ -288,45 +246,19 @@ export default function TeacherCreateClassPage() {
 
             <div className="p-5">
               <p className="text-xs text-muted">Mã lớp</p>
-
-              <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
-                <strong className="tracking-[0.2em] text-ink">
-                  {classCode}
-                </strong>
-
-                <button
-                  type="button"
-                  onClick={handleRegenerateCode}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald transition hover:text-emerald/80"
-                >
-                  <RefreshCw className="size-4" />
-                  Tạo mã khác
-                </button>
-              </div>
+              <p className="mt-2 rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold text-secondary">Được tạo tự động sau khi lưu</p>
 
               <p className="mt-4 text-sm leading-6 text-secondary">
                 {description.trim() || "Chưa có mô tả cho lớp học này."}
               </p>
 
-              <div className="mt-5 grid grid-cols-2 gap-3 border-t border-line pt-4 text-center">
-                <div>
-                  <p className="text-xl font-extrabold text-ink">0</p>
-
-                  <p className="text-xs text-muted">Học sinh</p>
-                </div>
-
-                <div>
-                  <p className="text-xl font-extrabold text-ink">0%</p>
-
-                  <p className="text-xs text-muted">Hoàn thành</p>
-                </div>
-              </div>
+              <p className="mt-5 border-t border-line pt-4 text-xs text-muted">Sĩ số và thông tin lớp sẽ hiển thị sau khi tạo.</p>
             </div>
           </div>
 
           <button
             type="submit"
-            disabled={isSubmitting || isProcessingCover || !isCoverValid}
+            disabled={isSubmitting}
             className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-emerald px-6 text-sm font-extrabold text-white transition hover:bg-emerald/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <School className="size-4" />
@@ -334,10 +266,8 @@ export default function TeacherCreateClassPage() {
             {isSubmitting ? "Đang tạo lớp..." : "Tạo lớp học"}
           </button>
 
-          <p className="mt-3 text-center text-xs leading-5 text-muted">
-            Sau khi tạo, bạn sẽ được chuyển đến trang quản lý lớp để nhập danh
-            sách học sinh.
-          </p>
+          {formError && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</p>}
+          <p className="mt-3 text-center text-xs leading-5 text-muted">Sau khi tạo, bạn sẽ được chuyển đến chi tiết lớp.</p>
         </aside>
       </form>
     </div>

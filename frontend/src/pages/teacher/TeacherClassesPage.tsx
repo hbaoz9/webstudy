@@ -1,11 +1,11 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from 'react';
 
 import {
   BookOpenText,
-  ClipboardList,
   Plus,
   Search,
   SearchX,
@@ -24,9 +24,7 @@ import {
   TeacherStatCard,
 } from '../../components/teacher/TeacherStatCard';
 
-import {
-  useTeacherData,
-} from '../../contexts/TeacherDataContext';
+import { listTeacherClassrooms, type TeacherClassroom } from '../../service/api/classrooms';
 
 type ClassroomStatusFilter =
     | 'all'
@@ -46,10 +44,22 @@ function normalizeSearchText(
 }
 
 export default function TeacherClassesPage() {
-  const {
-    classrooms,
-    getJoinRequests,
-  } = useTeacherData();
+  const [classrooms, setClassrooms] = useState<TeacherClassroom[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    setClassrooms([]);
+    void listTeacherClassrooms()
+      .then((items) => { if (active) setClassrooms(items); })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Không thể tải danh sách lớp.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [revision]);
 
   const [
     searchValue,
@@ -156,23 +166,6 @@ export default function TeacherClassesPage() {
       0,
     );
 
-  const totalPendingRequests =
-    classrooms.reduce(
-      (total, classroom) => {
-        const pendingCount =
-          getJoinRequests(
-            classroom.id,
-          ).filter(
-            (request) =>
-              request.status ===
-              'pending',
-          ).length;
-
-        return total + pendingCount;
-      },
-      0,
-    );
-
   const hasFilters =
     searchValue.trim().length > 0 ||
     academicYearFilter !== 'all' ||
@@ -197,8 +190,7 @@ export default function TeacherClassesPage() {
           </h1>
 
           <p className="mt-2 text-sm text-secondary">
-            Quản lý lớp học, học sinh và
-            các yêu cầu tham gia.
+            Các lớp thuộc tài khoản giáo viên của bạn.
           </p>
         </div>
 
@@ -212,32 +204,32 @@ export default function TeacherClassesPage() {
       </div>
 
       {/* Thống kê */}
-      <section className="grid gap-5 md:grid-cols-3">
+      {!loading && !error && <section className="grid gap-5 sm:grid-cols-2">
         <TeacherStatCard
           label="Tổng số lớp"
           value={classrooms.length}
-          description="Lớp học đang quản lý"
+          description="Lớp thuộc tài khoản của bạn"
           icon={BookOpenText}
           tone="green"
         />
 
         <TeacherStatCard
-          label="Tổng số học sinh"
+          label="Học sinh đang tham gia"
           value={totalStudents}
-          description="Học sinh trong các lớp"
+          description="Theo dữ liệu lớp học"
           icon={UsersRound}
           tone="slate"
         />
 
-        <TeacherStatCard
-          label="Yêu cầu chờ duyệt"
-          value={totalPendingRequests}
-          description="Cần giáo viên kiểm tra"
-          icon={ClipboardList}
-          tone="amber"
-        />
-      </section>
+      </section>}
 
+      {loading && <p role="status" className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Đang tải danh sách lớp…</p>}
+      {error && !loading && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+        <p>{error}</p>
+        <button type="button" onClick={() => setRevision((value) => value + 1)} className="mt-3 min-h-11 font-bold underline">Thử lại</button>
+      </div>}
+
+      {!loading && !error && <>
       {/* Tìm kiếm và bộ lọc */}
       <section className="rounded-2xl border border-line bg-white p-5 shadow-card">
         <div className="flex flex-col gap-4 md:flex-row">
@@ -245,6 +237,7 @@ export default function TeacherClassesPage() {
             <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted" />
 
             <input
+              aria-label="Tìm lớp"
               type="search"
               value={searchValue}
               onChange={(event) =>
@@ -258,6 +251,7 @@ export default function TeacherClassesPage() {
           </div>
 
           <select
+            aria-label="Lọc theo năm học"
             value={academicYearFilter}
             onChange={(event) =>
               setAcademicYearFilter(
@@ -283,6 +277,7 @@ export default function TeacherClassesPage() {
           </select>
 
           <select
+            aria-label="Lọc theo trạng thái"
             value={classroomStatusFilter}
             onChange={(event) =>
                 setClassroomStatusFilter(
@@ -381,6 +376,7 @@ export default function TeacherClassesPage() {
           </div>
         )}
       </section>
+      </>}
     </div>
   );
 }
