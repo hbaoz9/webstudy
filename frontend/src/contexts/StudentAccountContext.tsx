@@ -16,6 +16,7 @@ const STORAGE_KEY = STUDENT_PROFILE_KEY;
 type StudentAccountContextValue = {
   student: StudentProfile;
   hasStudentProfile: boolean;
+  setAuthenticatedStudent: (student: StudentProfile | null) => void;
 
   updateStudent: (
     changes: Partial<Pick<StudentProfile, "name" | "email">>,
@@ -75,15 +76,17 @@ type StudentAccountProviderProps = {
 export function StudentAccountProvider({
   children,
 }: StudentAccountProviderProps) {
-  const [student, setStudent] = useState<StudentProfile>(loadStudent);
+  const [localStudent, setStudent] = useState<StudentProfile>(loadStudent);
+  const [authenticatedStudent, setAuthenticatedStudent] = useState<StudentProfile | null>(null);
+  const student = authenticatedStudent ?? localStudent;
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(student));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(localStudent));
     } catch (error) {
       console.error("Khôngt thể lưu hồ sơ học sinh vào localStorage.", error);
     }
-  }, [student]);
+  }, [localStudent]);
 
   const updateStudent = useCallback(
     (changes: Partial<Pick<StudentProfile, "name" | "email">>) => {
@@ -107,6 +110,7 @@ export function StudentAccountProvider({
     () => ({
       student,
       hasStudentProfile,
+      setAuthenticatedStudent,
       updateStudent,
       resetStudent,
     }),

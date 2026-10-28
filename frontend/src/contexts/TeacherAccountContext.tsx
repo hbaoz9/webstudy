@@ -28,6 +28,12 @@ const INITIAL_TEACHER_ACCOUNT:
 type TeacherAccountContextValue = {
   teacherAccount:
     TeacherAccountState;
+  setAuthenticatedTeacher: (teacher: {
+    id: string;
+    name: string;
+    email: string;
+    verificationStatus: TeacherAccountState['verificationStatus'];
+  } | null) => void;
 
   initializeProfile: (name: string, email: string) => void;
 
@@ -36,17 +42,6 @@ type TeacherAccountContextValue = {
       SubmitTeacherVerificationPayload,
   ) => void;
 
-  /*
-   * Chỉ dùng trong giai đoạn frontend
-   * để mô phỏng kết quả từ Admin.
-   */
-  simulateApproval: () => void;
-
-  simulateRejection: (
-    reason: string,
-  ) => void;
-
-  resetVerification: () => void;
 };
 
 const TeacherAccountContext =
@@ -125,18 +120,41 @@ export function TeacherAccountProvider({
   children,
 }: TeacherAccountProviderProps) {
   const [
-    teacherAccount,
+    localTeacherAccount,
     setTeacherAccount,
   ] = useState<TeacherAccountState>(
     loadTeacherAccount,
   );
+  const [authenticatedTeacher, setAuthenticatedTeacher] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    verificationStatus: TeacherAccountState['verificationStatus'];
+  } | null>(null);
+  const teacherAccount = useMemo<TeacherAccountState>(() => {
+    if (!authenticatedTeacher) return localTeacherAccount;
+    const sameAccount = localTeacherAccount.profile?.email === authenticatedTeacher.email;
+    return {
+      ...localTeacherAccount,
+      profile: {
+        id: authenticatedTeacher.id,
+        name: authenticatedTeacher.name,
+        email: authenticatedTeacher.email,
+      },
+      verificationStatus: authenticatedTeacher.verificationStatus,
+      submission: sameAccount ? localTeacherAccount.submission : null,
+      rejectionReason: sameAccount ? localTeacherAccount.rejectionReason : undefined,
+      verifiedAt: authenticatedTeacher.verificationStatus === 'verified' && sameAccount
+        ? localTeacherAccount.verifiedAt : undefined,
+    };
+  }, [authenticatedTeacher, localTeacherAccount]);
 
   useEffect(() => {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify(
-          teacherAccount,
+          localTeacherAccount,
         ),
       );
     } catch (error) {
@@ -145,7 +163,7 @@ export function TeacherAccountProvider({
         error,
       );
     }
-  }, [teacherAccount]);
+  }, [localTeacherAccount]);
 
   const submitVerification =
     useCallback(
@@ -154,7 +172,9 @@ export function TeacherAccountProvider({
           SubmitTeacherVerificationPayload,
       ) => {
         setTeacherAccount((currentAccount) => ({
-          profile: currentAccount.profile,
+          profile: authenticatedTeacher
+            ? { id: authenticatedTeacher.id, name: authenticatedTeacher.name, email: authenticatedTeacher.email }
+            : currentAccount.profile,
           verificationStatus:
             'pending',
 
@@ -172,56 +192,8 @@ export function TeacherAccountProvider({
             undefined,
         }));
       },
-      [],
+      [authenticatedTeacher],
     );
-
-  const simulateApproval =
-    useCallback(() => {
-      setTeacherAccount(
-        (currentAccount) => ({
-          ...currentAccount,
-
-          verificationStatus:
-            'verified',
-
-          rejectionReason:
-            undefined,
-
-          verifiedAt:
-            new Date().toISOString(),
-        }),
-      );
-    }, []);
-
-  const simulateRejection =
-    useCallback(
-      (reason: string) => {
-        setTeacherAccount(
-          (currentAccount) => ({
-            ...currentAccount,
-
-            verificationStatus:
-              'rejected',
-
-            rejectionReason:
-              reason.trim() ||
-              'Hồ sơ chưa đáp ứng yêu cầu xác minh.',
-
-            verifiedAt:
-              undefined,
-          }),
-        );
-      },
-      [],
-    );
-
-  const resetVerification =
-    useCallback(() => {
-      setTeacherAccount((currentAccount) => ({
-        ...INITIAL_TEACHER_ACCOUNT,
-        profile: currentAccount.profile,
-      }));
-    }, []);
 
   const initializeProfile = useCallback((name: string, email: string) => {
     setTeacherAccount((currentAccount) => currentAccount.profile ? currentAccount : ({
@@ -237,19 +209,14 @@ export function TeacherAccountProvider({
   const contextValue = useMemo(
     () => ({
       teacherAccount,
+      setAuthenticatedTeacher,
       initializeProfile,
       submitVerification,
-      simulateApproval,
-      simulateRejection,
-      resetVerification,
     }),
     [
       teacherAccount,
       initializeProfile,
       submitVerification,
-      simulateApproval,
-      simulateRejection,
-      resetVerification,
     ],
   );
 

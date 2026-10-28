@@ -65,7 +65,16 @@ function LegacyStudentRedirect({ to }: { to: string }) {
 }
 
 function RequireRole({ role }: { role: AuthRole }) {
-  const { session } = useAuth();
+  const { session, status, error, refreshSession } = useAuth();
+  if (status === "loading") {
+    return <p role="status" className="p-5 text-sm text-secondary">Đang kiểm tra phiên đăng nhập...</p>;
+  }
+  if (status === "error" && !session) {
+    return <main role="alert" className="mx-auto my-10 max-w-lg rounded-2xl border border-line bg-white p-6">
+      <p className="text-sm text-red-600">{error}</p>
+      <button type="button" onClick={() => void refreshSession()} className="mt-4 min-h-11 rounded-full bg-emerald px-5 text-sm font-bold text-white">Thử lại</button>
+    </main>;
+  }
   if (!session) return <Navigate to={`/auth?role=${role}`} replace />;
   if (session.role !== role) return <Navigate to={`/${session.role}`} replace />;
   return <Outlet />;

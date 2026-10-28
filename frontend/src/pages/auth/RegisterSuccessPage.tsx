@@ -10,7 +10,7 @@ type RegisterSuccessPageProps = {
 const contentByRole = {
   student: {
     description:
-      "Hồ sơ học sinh mock đã được lưu trên trình duyệt này. Bạn có thể bắt đầu học và tham gia lớp bằng mã giáo viên cung cấp.",
+      "Tài khoản học sinh đã được tạo. Bạn có thể bắt đầu học và tham gia lớp bằng mã giáo viên cung cấp.",
     note: "Bạn có thể khám phá các bài học hoặc tham gia lớp học bằng mã lớp được giáo viên cung cấp.",
     primaryLabel: "Bắt đầu khám phá",
     secondaryLabel: "Tham gia lớp học",
@@ -20,7 +20,7 @@ const contentByRole = {
 
   teacher: {
     description:
-      "Hồ sơ giáo viên mock đã được lưu trên trình duyệt này. Hãy hoàn tất xác minh để tạo lớp và giao bài theo luồng frontend hiện có.",
+      "Tài khoản giáo viên đã được tạo. Hãy hoàn tất xác minh trước khi quản lý lớp học.",
     note: "Để tạo lớp học và quản lý học sinh, vui lòng hoàn tất bước xác minh tài khoản giáo viên.",
     primaryLabel: "Xác minh tài khoản giáo viên",
     secondaryLabel: "Vào tổng quan",
@@ -56,11 +56,11 @@ export default function RegisterSuccessPage({
 
         <div className="mt-8 inline-flex items-center gap-2 rounded-full bg-emerald/15 px-4 py-2 text-xs font-bold text-emerald">
           <span className="size-2 rounded-full bg-emerald" />
-          ĐÃ TẠO HỒ SƠ MOCK
+          ĐÃ TẠO TÀI KHOẢN
         </div>
 
         <h1 className="mt-5 text-2xl font-extrabold text-ink sm:text-3xl">
-          Hồ sơ đã sẵn sàng!
+          Tài khoản đã sẵn sàng!
         </h1>
 
         <p className="mx-auto mt-4 max-w-[510px] text-sm leading-7 text-secondary sm:text-base">

@@ -10,7 +10,6 @@ import {
   Clock3,
   FileCheck2,
   FileUp,
-  RotateCcw,
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react';
@@ -22,6 +21,8 @@ import {
 import {
   useTeacherAccount,
 } from '../../contexts/TeacherAccountContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { ApiError, apiRequest } from '../../service/api/client';
 
 import type {
   VerificationDocument,
@@ -71,10 +72,9 @@ export default function TeacherVerificationPage() {
   const {
     teacherAccount,
     submitVerification,
-    simulateApproval,
-    simulateRejection,
-    resetVerification,
   } = useTeacherAccount();
+  const { session, refreshSession } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
 
   const previousSubmission =
     teacherAccount.submission;
@@ -138,8 +138,7 @@ export default function TeacherVerificationPage() {
     setFormError,
   ] = useState('');
 
-  const status =
-    teacherAccount.verificationStatus;
+  const status = session?.teacherVerificationStatus ?? 'unverified';
 
   const handleDocumentChange = (
     event: ChangeEvent<HTMLInputElement>,
@@ -178,11 +177,7 @@ export default function TeacherVerificationPage() {
       return;
     }
 
-    /*
-     * Bản frontend chỉ lưu metadata.
-     * File thật sẽ được gửi lên server
-     * khi làm backend.
-     */
+    // BE-03 chỉ nhận metadata của file; nội dung file chưa được tải lên.
     setSelectedDocument({
       name: file.name,
       type: file.type,
@@ -190,7 +185,7 @@ export default function TeacherVerificationPage() {
     });
   };
 
-  const handleSubmit = (
+  const handleSubmit = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
@@ -238,7 +233,7 @@ export default function TeacherVerificationPage() {
       return;
     }
 
-    submitVerification({
+    const payload = {
       fullName:
         fullName.trim(),
 
@@ -255,7 +250,25 @@ export default function TeacherVerificationPage() {
       position,
       document:
         selectedDocument,
-    });
+    };
+    setSubmitting(true);
+    try {
+      await apiRequest('/teacher/verification', 'POST', {
+        full_name: payload.fullName,
+        school_name: payload.schoolName,
+        school_address: payload.schoolAddress,
+        teacher_code: payload.teacherCode,
+        position: payload.position,
+        document: payload.document,
+      });
+      submitVerification(payload);
+      await refreshSession();
+    } catch (cause) {
+      const validation = cause instanceof ApiError ? Object.values(cause.errors).flat()[0] : undefined;
+      setFormError(validation ?? (cause instanceof Error ? cause.message : 'Không thể gửi hồ sơ xác minh.'));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -320,47 +333,6 @@ export default function TeacherVerificationPage() {
             </div>
           )}
 
-          {import.meta.env.DEV && (
-            <div className="mt-6 rounded-xl border border-dashed border-line bg-slate-50 p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">
-                Công cụ mô phỏng Admin
-              </p>
-
-              <div className="mt-3 flex flex-wrap justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={
-                    simulateApproval
-                  }
-                  className="rounded-full bg-emerald px-5 py-2.5 text-sm font-bold text-white"
-                >
-                  Mô phỏng duyệt
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    simulateRejection(
-                      'Ảnh minh chứng chưa rõ hoặc chưa thể hiện đầy đủ thông tin giáo viên.',
-                    )
-                  }
-                  className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-bold text-white"
-                >
-                  Mô phỏng từ chối
-                </button>
-
-                <button
-                  type="button"
-                  onClick={
-                    resetVerification
-                  }
-                  className="rounded-full border border-line bg-white px-5 py-2.5 text-sm font-bold text-ink"
-                >
-                  Đặt lại
-                </button>
-              </div>
-            </div>
-          )}
         </section>
       )}
 
@@ -398,20 +370,6 @@ export default function TeacherVerificationPage() {
             Về Dashboard
           </Link>
 
-          {import.meta.env.DEV && (
-            <div className="mt-6">
-              <button
-                type="button"
-                onClick={
-                  resetVerification
-                }
-                className="inline-flex items-center gap-2 text-xs font-bold text-muted"
-              >
-                <RotateCcw className="size-4" />
-                Đặt lại để kiểm thử
-              </button>
-            </div>
-          )}
         </section>
       )}
 
@@ -585,6 +543,9 @@ export default function TeacherVerificationPage() {
               quyết định công tác hoặc giấy
               xác nhận của nhà trường.
             </p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Hiện hệ thống chỉ lưu thông tin file, chưa tải nội dung file lên máy chủ.
+            </p>
 
             <label className="mt-3 flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-emerald/40 bg-emerald/5 px-6 text-center transition hover:bg-emerald/10">
               <input
@@ -653,7 +614,8 @@ export default function TeacherVerificationPage() {
 
           <button
             type="submit"
-            className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-full bg-emerald px-6 text-sm font-extrabold text-white transition hover:bg-emerald/90"
+            disabled={submitting}
+            className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-full bg-emerald px-6 text-sm font-extrabold text-white transition hover:bg-emerald/90 disabled:opacity-50"
           >
             {status === 'rejected'
               ? 'Gửi lại hồ sơ'

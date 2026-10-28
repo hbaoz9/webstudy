@@ -4,22 +4,15 @@ import {
   useLocation,
 } from 'react-router-dom';
 
-import {
-  useTeacherAccount,
-} from '../contexts/TeacherAccountContext';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function VerifiedTeacherRoute() {
   const location =
     useLocation();
 
-  const {
-    teacherAccount,
-  } = useTeacherAccount();
+  const { session } = useAuth();
 
-  const isVerified =
-    teacherAccount
-      .verificationStatus ===
-    'verified';
+  const isVerified = session?.role === 'teacher' && session.teacherVerificationStatus === 'verified';
 
   if (!isVerified) {
     return (

@@ -1,85 +1,165 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { STUDENT_PROFILE_KEY, useStudentAccount } from "./StudentAccountContext";
-import { TEACHER_ACCOUNT_KEY, useTeacherAccount } from "./TeacherAccountContext";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useStudentAccount } from "./StudentAccountContext";
+import { useTeacherAccount } from "./TeacherAccountContext";
+import { AUTH_UNAUTHORIZED_EVENT, ApiError, apiGet, apiRequest } from "../service/api/client";
 
 export type AuthRole = "teacher" | "student";
-type AuthSession = { role: AuthRole; userId: string };
+export type AuthUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: AuthRole | "admin";
+  teacher_verification_status: "unverified" | "pending" | "verified" | "rejected" | null;
+};
+export type AuthSession = {
+  role: AuthRole;
+  userId: string;
+  name: string;
+  email: string;
+  teacherVerificationStatus: AuthUser["teacher_verification_status"];
+};
 type AuthContextValue = {
   session: AuthSession | null;
+  status: "loading" | "ready" | "error";
   error: string;
-  signIn: (role: AuthRole) => boolean;
-  signOut: () => boolean;
+  signIn: (email: string, password: string) => Promise<AuthSession>;
+  registerAccount: (role: AuthRole, name: string, email: string, password: string, confirmation: string) => Promise<AuthSession>;
+  signOut: () => Promise<boolean>;
+  refreshSession: () => Promise<void>;
 };
-const SESSION_KEY = "webstudy-mock-session-v1";
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-function readSession(): AuthSession | null {
-  try {
-    const value: unknown = JSON.parse(localStorage.getItem(SESSION_KEY) ?? "null");
-    if (!value || typeof value !== "object" || !("role" in value) || !("userId" in value)) return null;
-    if ((value.role !== "teacher" && value.role !== "student") || typeof value.userId !== "string" || !value.userId.trim()) return null;
-    return { role: value.role, userId: value.userId };
-  } catch {
-    return null;
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { student, hasStudentProfile } = useStudentAccount();
-  const { teacherAccount } = useTeacherAccount();
-  const [storedSession, setStoredSession] = useState(readSession);
+  const { setAuthenticatedStudent } = useStudentAccount();
+  const { setAuthenticatedTeacher } = useTeacherAccount();
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [status, setStatus] = useState<AuthContextValue["status"]>("loading");
   const [error, setError] = useState("");
-  const studentId = hasStudentProfile ? student.id : undefined;
-  const teacherId = teacherAccount.profile?.id;
-  // Phiên chỉ hợp lệ khi còn khớp danh tính local. Không thay đổi ID hồ sơ cũ.
-  const session = storedSession && storedSession.userId ===
-    (storedSession.role === "student" ? studentId : teacherId) ? storedSession : null;
+  const generation = useRef(0);
+
+  const applyUser = useCallback((user: AuthUser | null): AuthSession | null => {
+    if (!user || (user.role !== "student" && user.role !== "teacher")) {
+      setSession(null);
+      setAuthenticatedStudent(null);
+      setAuthenticatedTeacher(null);
+      return null;
+    }
+    const next: AuthSession = {
+      role: user.role,
+      userId: String(user.id),
+      name: user.name,
+      email: user.email,
+      teacherVerificationStatus: user.teacher_verification_status,
+    };
+    setSession(next);
+    setAuthenticatedStudent(user.role === "student" ? { id: next.userId, name: user.name, email: user.email } : null);
+    setAuthenticatedTeacher(user.role === "teacher" ? {
+      id: next.userId,
+      name: user.name,
+      email: user.email,
+      verificationStatus: user.teacher_verification_status ?? "unverified",
+    } : null);
+    return next;
+  }, [setAuthenticatedStudent, setAuthenticatedTeacher]);
+
+  const refreshSession = useCallback(async () => {
+    const current = ++generation.current;
+    try {
+      const response = await apiGet<{ data: AuthUser }>("/auth/me");
+      if (current !== generation.current) return;
+      applyUser(response.data);
+      setStatus("ready");
+      setError("");
+    } catch (cause) {
+      if (current !== generation.current) return;
+      if (cause instanceof ApiError && cause.status === 401) {
+        applyUser(null);
+        setStatus("ready");
+        setError("");
+      } else {
+        setStatus((previous) => previous === "loading" ? "error" : previous);
+        setError(cause instanceof Error ? cause.message : "Không thể kiểm tra phiên đăng nhập.");
+      }
+    }
+  }, [applyUser]);
 
   useEffect(() => {
-    const refresh = (event: StorageEvent) => {
-      if (event.key === SESSION_KEY || event.key === null) {
-        setStoredSession(readSession());
-        setError("");
-      }
+    void refreshSession();
+    const unauthorized = () => {
+      ++generation.current;
+      applyUser(null);
+      setStatus("ready");
+      setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
     };
-    window.addEventListener("storage", refresh);
-    return () => window.removeEventListener("storage", refresh);
-  }, []);
+    const onFocus = () => { void refreshSession(); };
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, unauthorized);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, unauthorized);
+      window.removeEventListener("focus", onFocus);
+      ++generation.current;
+    };
+  }, [refreshSession, applyUser]);
 
-  const signIn = useCallback((role: AuthRole) => {
-    const userId = role === "student" ? studentId : teacherId;
-    if (!userId) {
-      setError("Hồ sơ chưa sẵn sàng. Vui lòng kiểm tra tên và email.");
-      return false;
-    }
-    const nextSession = { role, userId };
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthSession> => {
+    ++generation.current;
+    setError("");
     try {
-      // Lưu hồ sơ trước phiên, kể cả khi effect của context chưa chạy sau khởi tạo.
-      localStorage.setItem(role === "student" ? STUDENT_PROFILE_KEY : TEACHER_ACCOUNT_KEY,
-        JSON.stringify(role === "student" ? student : teacherAccount));
-      localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
-      setStoredSession(nextSession);
-      setError("");
-      return true;
-    } catch {
-      setError("Không lưu được phiên trên trình duyệt. Vui lòng thử lại.");
-      return false;
+      const response = await apiRequest<{ data: AuthUser }>("/auth/login", "POST", { email, password });
+      if (response.data.role === "admin") {
+        await apiRequest("/auth/logout", "POST");
+        throw new ApiError("Tài khoản quản trị chưa có giao diện đăng nhập tại đây.", 403);
+      }
+      const next = applyUser(response.data);
+      if (!next) throw new ApiError("Vai trò tài khoản không được hỗ trợ.", 403);
+      setStatus("ready");
+      return next;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Không thể đăng nhập.");
+      throw cause;
     }
-  }, [studentId, teacherId, student, teacherAccount]);
+  }, [applyUser]);
 
-  const signOut = useCallback(() => {
+  const registerAccount = useCallback(async (
+    role: AuthRole, name: string, email: string, password: string, confirmation: string,
+  ): Promise<AuthSession> => {
+    ++generation.current;
+    setError("");
     try {
-      localStorage.removeItem(SESSION_KEY);
-      setStoredSession(null);
-      setError("");
+      const response = await apiRequest<{ data: AuthUser }>("/auth/register", "POST", {
+        role, name, email, password, password_confirmation: confirmation,
+      });
+      const next = applyUser(response.data);
+      if (!next) throw new ApiError("Vai trò tài khoản không được hỗ trợ.", 403);
+      setStatus("ready");
+      return next;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Không thể đăng ký.");
+      throw cause;
+    }
+  }, [applyUser]);
+
+  const signOut = useCallback(async (): Promise<boolean> => {
+    ++generation.current;
+    setError("");
+    try {
+      await apiRequest("/auth/logout", "POST");
+      applyUser(null);
+      setStatus("ready");
       return true;
-    } catch {
-      setError("Không xóa được phiên trên trình duyệt. Vui lòng thử đăng xuất lại.");
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 401) {
+        applyUser(null);
+        return true;
+      }
+      setError(cause instanceof Error ? cause.message : "Không thể đăng xuất.");
       return false;
     }
-  }, []);
+  }, [applyUser]);
 
-  const value = useMemo(() => ({ session, error, signIn, signOut }), [session, error, signIn, signOut]);
+  const value = useMemo(() => ({
+    session, status, error, signIn, registerAccount, signOut, refreshSession,
+  }), [session, status, error, signIn, registerAccount, signOut, refreshSession]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

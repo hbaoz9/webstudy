@@ -2,8 +2,7 @@ import ContourBackground from "../../components/common/ContourBackground";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth, type AuthRole } from "../../contexts/AuthContext";
-import { useStudentAccount } from "../../contexts/StudentAccountContext";
-import { useTeacherAccount } from "../../contexts/TeacherAccountContext";
+import { ApiError } from "../../service/api/client";
 import { BookOpenCheck, GraduationCap, ArrowLeft, Compass } from "lucide-react";
 
 type AuthTab = "login" | "register";
@@ -11,55 +10,22 @@ type AuthTab = "login" | "register";
 export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { session, error, signIn } = useAuth();
-  const { student, hasStudentProfile, updateStudent } = useStudentAccount();
-  const { teacherAccount, initializeProfile } = useTeacherAccount();
+  const { session, status, error, signIn, registerAccount, refreshSession } = useAuth();
   const role: AuthRole =
     searchParams.get("role") === "teacher" ? "teacher" : "student";
   const tab: AuthTab =
     searchParams.get("tab") === "register" ? "register" : "login";
-  const profile =
-    role === "student"
-      ? hasStudentProfile
-        ? student
-        : undefined
-      : teacherAccount.profile;
-  const storedName =
-    role === "teacher"
-      ? teacherAccount.submission?.fullName?.trim() ||
-        teacherAccount.profile?.name ||
-        ""
-      : student.name;
-  const [name, setName] = useState(storedName);
-  const [email, setEmail] = useState(profile?.email ?? "");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [formError, setFormError] = useState("");
-  const [pending, setPending] = useState<{
-    role: AuthRole;
-    tab: AuthTab;
-  } | null>(null);
-  const isOpeningSession = useRef(false);
+  const [pending, setPending] = useState(false);
+  const navigatingAfterSubmit = useRef(false);
 
   useEffect(() => {
-    setName(storedName);
-    setEmail(profile?.email ?? "");
     setFormError("");
-  }, [role, tab, storedName, profile?.email]);
-
-  useEffect(() => {
-    if (!pending || !profile) return;
-    isOpeningSession.current = true;
-    if (signIn(pending.role)) {
-      navigate(
-        pending.tab === "register"
-          ? `/auth/register/success/${pending.role}`
-          : `/${pending.role}`,
-        { replace: true },
-      );
-    } else {
-      isOpeningSession.current = false;
-    }
-    setPending(null);
-  }, [pending, profile, signIn, navigate]);
+  }, [role, tab]);
 
   const setMode = (nextTab: AuthTab, nextRole = role) => {
     const params = new URLSearchParams();
@@ -68,7 +34,7 @@ export default function AuthPage() {
     setSearchParams(params, { replace: true });
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError("");
     const normalizedEmail = email.trim().toLowerCase();
@@ -77,49 +43,34 @@ export default function AuthPage() {
       setFormError("Vui lòng nhập email hợp lệ.");
       return;
     }
-    if (tab === "login") {
-      if (!profile) {
-        setFormError(
-          "Chưa có hồ sơ cho vai trò này trên trình duyệt. Vui lòng chuyển sang Đăng ký.",
-        );
-        return;
-      }
-
-      if (profile.email.trim().toLowerCase() !== normalizedEmail) {
-        setFormError(
-          "Email không khớp hồ sơ hiện có. Dữ liệu của bạn vẫn được giữ nguyên.",
-        );
-        return;
-      }
-
-      isOpeningSession.current = true;
-
-      if (signIn(role)) {
-        navigate(`/${role}`, { replace: true });
-      } else {
-        isOpeningSession.current = false;
-      }
-
-      return;
-    }
-
-    if (profile) {
-      setFormError(
-        "Vai trò này đã có hồ sơ trên trình duyệt. Hãy chuyển sang Đăng nhập.",
-      );
-      return;
-    }
-    if (normalizedName.length < 2) {
+    if (tab === "register" && normalizedName.length < 2) {
       setFormError("Vui lòng nhập họ và tên có ít nhất 2 ký tự.");
       return;
     }
-    if (role === "student")
-      updateStudent({ name: normalizedName, email: normalizedEmail });
-    else initializeProfile(normalizedName, normalizedEmail);
-    setPending({ role, tab });
+    if (tab === "register" && password !== confirmation) {
+      setFormError("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+    setPending(true);
+    try {
+      const authenticated = tab === "register"
+        ? await registerAccount(role, normalizedName, normalizedEmail, password, confirmation)
+        : await signIn(normalizedEmail, password);
+      navigatingAfterSubmit.current = true;
+      navigate(tab === "register"
+        ? `/auth/register/success/${authenticated.role}`
+        : `/${authenticated.role}`, { replace: true });
+    } catch (cause) {
+      const validation = cause instanceof ApiError
+        ? Object.values(cause.errors).flat()[0]
+        : undefined;
+      setFormError(validation ?? (cause instanceof Error ? cause.message : "Không thể xác thực."));
+    } finally {
+      setPending(false);
+    }
   };
 
-  if (session && !pending && !isOpeningSession.current)
+  if (session && !pending && !navigatingAfterSubmit.current)
     return <Navigate to={`/${session.role}`} replace />;
 
   return (
@@ -184,7 +135,7 @@ export default function AuthPage() {
                   <button
                     key={value}
                     type="button"
-                    disabled={pending !== null}
+                    disabled={pending}
                     onClick={() => setMode(value)}
                     aria-pressed={selected}
                     className={`relative min-h-12 px-4 py-3 text-sm font-semibold transition-colors
@@ -208,7 +159,7 @@ export default function AuthPage() {
               })}
             </div>
             <form className="mt-7 space-y-4" onSubmit={submit}>
-              <fieldset disabled={pending !== null}>
+              <fieldset disabled={pending}>
                 <legend className="mb-2 text-sm font-semibold text-ink">
                   Vai trò
                 </legend>
@@ -234,7 +185,7 @@ export default function AuthPage() {
                       <button
                         key={value}
                         type="button"
-                        disabled={pending !== null}
+                        disabled={pending}
                         onClick={() => setMode(tab, value)}
                         aria-pressed={selected}
                         className={`flex min-h-16 items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald disabled:opacity-50 ${
@@ -262,7 +213,7 @@ export default function AuthPage() {
                   <input
                     required
                     type="text"
-                    disabled={pending !== null}
+                    disabled={pending}
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     maxLength={120}
@@ -279,7 +230,7 @@ export default function AuthPage() {
                 <input
                   required
                   type="email"
-                  disabled={pending !== null}
+                  disabled={pending}
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   maxLength={254}
@@ -288,12 +239,37 @@ export default function AuthPage() {
                   className="h-12 w-full rounded-lg border border-line bg-white px-4 text-sm outline-none focus:border-emerald focus:ring-2 focus:ring-emerald/10"
                 />
               </label>
-              {import.meta.env.DEV && !profile && (
-                <p className="text-xs leading-5 text-secondary">
-                  Chưa có hồ sơ {role === "teacher" ? "giáo viên" : "học sinh"}{" "}
-                  local. Lần đầu sẽ khởi tạo hồ sơ mock và giữ dữ liệu dự án
-                  hiện có.
-                </p>
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-ink">Mật khẩu</span>
+                <input
+                  required
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={tab === "register" ? 8 : undefined}
+                  autoComplete={tab === "register" ? "new-password" : "current-password"}
+                  className="h-12 w-full rounded-lg border border-line bg-white px-4 text-sm outline-none focus:border-emerald focus:ring-2 focus:ring-emerald/10"
+                />
+              </label>
+              {tab === "register" && (
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-ink">Xác nhận mật khẩu</span>
+                  <input
+                    required
+                    type="password"
+                    value={confirmation}
+                    onChange={(event) => setConfirmation(event.target.value)}
+                    minLength={8}
+                    autoComplete="new-password"
+                    className="h-12 w-full rounded-lg border border-line bg-white px-4 text-sm outline-none focus:border-emerald focus:ring-2 focus:ring-emerald/10"
+                  />
+                </label>
+              )}
+              {status === "loading" && <p role="status" className="text-sm text-secondary">Đang kiểm tra phiên đăng nhập...</p>}
+              {status === "error" && (
+                <button type="button" onClick={() => void refreshSession()} className="text-sm font-semibold text-emerald">
+                  Thử kiểm tra phiên lại
+                </button>
               )}
               {(formError || error) && (
                 <p
@@ -305,13 +281,13 @@ export default function AuthPage() {
               )}
               <button
                 type="submit"
-                disabled={pending !== null}
+                disabled={pending || status === "loading"}
                 className="min-h-12 w-full rounded-full bg-emerald px-5 text-sm font-bold text-white hover:bg-emerald/90 disabled:opacity-50"
               >
                 {pending
-                  ? "Đang mở phiên..."
+                  ? "Đang xử lý..."
                   : tab === "register"
-                    ? "Tạo hồ sơ mock"
+                    ? "Tạo tài khoản"
                     : "Đăng nhập"}
               </button>
             </form>
