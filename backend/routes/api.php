@@ -14,6 +14,7 @@ Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttl
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
+    Route::get('teacher-verifications/{submission}/document', [TeacherVerificationController::class, 'document']);
 
     Route::middleware('teacher.verified')->prefix('teacher/classrooms')->group(function (): void {
         Route::get('/', [TeacherClassroomController::class, 'index']);

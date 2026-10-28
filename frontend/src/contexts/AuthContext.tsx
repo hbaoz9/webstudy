@@ -3,7 +3,8 @@ import { useStudentAccount } from "./StudentAccountContext";
 import { useTeacherAccount } from "./TeacherAccountContext";
 import { AUTH_UNAUTHORIZED_EVENT, ApiError, apiGet, apiRequest } from "../service/api/client";
 
-export type AuthRole = "teacher" | "student";
+export type AuthRole = "teacher" | "student" | "admin";
+export type RegistrationRole = Exclude<AuthRole, "admin">;
 export type AuthUser = {
   id: number;
   name: string;
@@ -20,7 +21,9 @@ export type AuthSession = {
 };
 
 export function authHomePath(session: AuthSession): string {
-  return session.role === "student"
+  return session.role === "admin"
+    ? "/admin/teacher-verifications"
+    : session.role === "student"
     ? "/student/dashboard"
     : session.teacherVerificationStatus === "verified"
       ? "/teacher/dashboard"
@@ -31,7 +34,7 @@ type AuthContextValue = {
   status: "loading" | "ready" | "error";
   error: string;
   signIn: (email: string, password: string) => Promise<AuthSession>;
-  registerAccount: (role: AuthRole, name: string, email: string, password: string, confirmation: string) => Promise<AuthSession>;
+  registerAccount: (role: RegistrationRole, name: string, email: string, password: string, confirmation: string) => Promise<AuthSession>;
   signOut: () => Promise<boolean>;
   refreshSession: () => Promise<void>;
 };
@@ -46,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const generation = useRef(0);
 
   const applyUser = useCallback((user: AuthUser | null): AuthSession | null => {
-    if (!user || (user.role !== "student" && user.role !== "teacher")) {
+    if (!user || (user.role !== "student" && user.role !== "teacher" && user.role !== "admin")) {
       setSession(null);
       setAuthenticatedStudent(null);
       setAuthenticatedTeacher(null);
@@ -114,10 +117,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError("");
     try {
       const response = await apiRequest<{ data: AuthUser }>("/auth/login", "POST", { email, password });
-      if (response.data.role === "admin") {
-        await apiRequest("/auth/logout", "POST");
-        throw new ApiError("Tài khoản quản trị chưa có giao diện đăng nhập tại đây.", 403);
-      }
       const next = applyUser(response.data);
       if (!next) throw new ApiError("Vai trò tài khoản không được hỗ trợ.", 403);
       setStatus("ready");
@@ -129,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyUser]);
 
   const registerAccount = useCallback(async (
-    role: AuthRole, name: string, email: string, password: string, confirmation: string,
+    role: RegistrationRole, name: string, email: string, password: string, confirmation: string,
   ): Promise<AuthSession> => {
     ++generation.current;
     setError("");

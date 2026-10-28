@@ -11,7 +11,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TeacherVerificationController extends Controller
 {
@@ -39,7 +41,7 @@ class TeacherVerificationController extends Controller
         $status = Validator::make($request->query(), [
             'status' => ['sometimes', 'in:pending,verified,rejected,all'],
         ])->validate()['status'] ?? 'pending';
-        $query = TeacherVerificationSubmission::query()->latest();
+        $query = TeacherVerificationSubmission::query()->with('teacher.user')->latest();
 
         if ($status !== 'all') {
             $query->where('status', $status);
@@ -62,5 +64,22 @@ class TeacherVerificationController extends Controller
         Gate::authorize('review', $submission);
 
         return new TeacherVerificationResource($service->review($request->user(), $submission, false, $request->validated('reason')));
+    }
+
+    public function document(TeacherVerificationSubmission $submission): StreamedResponse
+    {
+        Gate::authorize('view', $submission);
+
+        $path = $submission->document_path;
+        abort_unless($path && preg_match('~\Ateacher-verifications/[A-Za-z0-9]+\.(?:pdf|jpg|jpeg|png)\z~', $path), 404);
+        abort_unless(Storage::disk('local')->exists($path), 404);
+
+        $name = preg_replace('/[^A-Za-z0-9._-]/', '_', $submission->document_name) ?: 'verification-document';
+
+        return Storage::disk('local')->response($path, $name, [
+            'Content-Type' => $submission->document_type,
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ], 'inline');
     }
 }

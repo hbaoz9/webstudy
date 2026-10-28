@@ -65,15 +65,17 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const mutation = method !== "GET";
+  const formData = typeof FormData !== "undefined" && body instanceof FormData;
   if (mutation) await ensureCsrfCookie(timeoutMs);
 
   const send = () => fetchWithTimeout(`${BACKEND_URL}/api${path}`, {
     method,
     headers: {
       Accept: "application/json",
-      ...(mutation ? { "Content-Type": "application/json", "X-XSRF-TOKEN": csrfToken() ?? "" } : {}),
+      ...(mutation ? { "X-XSRF-TOKEN": csrfToken() ?? "" } : {}),
+      ...(mutation && !formData ? { "Content-Type": "application/json" } : {}),
     },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(body === undefined ? {} : { body: formData ? body as FormData : JSON.stringify(body) }),
   }, timeoutMs);
 
   let response = await send();
@@ -86,6 +88,26 @@ export async function apiRequest<T>(
 
 export function apiGet<T>(endpoint: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
   return apiRequest<T>(endpoint, "GET", undefined, timeoutMs);
+}
+
+export type VerificationDocument = {
+  blob: Blob;
+  contentType: "image/jpeg" | "image/png" | "application/pdf";
+};
+
+export async function getVerificationDocument(id: number): Promise<VerificationDocument> {
+  const response = await fetchWithTimeout(`${BACKEND_URL}/api/teacher-verifications/${encodeURIComponent(id)}/document`, {
+    method: "GET",
+    headers: { Accept: "image/jpeg, image/png, application/pdf, application/json" },
+  }, DEFAULT_TIMEOUT_MS);
+  if (!response.ok) await parseResponse(response);
+
+  const contentType = response.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "image/jpeg" && contentType !== "image/png" && contentType !== "application/pdf") {
+    throw new ApiError("Máy chủ trả về định dạng minh chứng không được hỗ trợ.");
+  }
+
+  return { blob: await response.blob(), contentType };
 }
 
 export type HealthResponse = { status: "ok"; service: "webstudy-api" };

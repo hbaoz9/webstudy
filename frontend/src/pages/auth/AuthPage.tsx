@@ -1,7 +1,7 @@
 import ContourBackground from "../../components/common/ContourBackground";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { authHomePath, useAuth, type AuthRole } from "../../contexts/AuthContext";
+import { authHomePath, useAuth, type AuthRole, type RegistrationRole } from "../../contexts/AuthContext";
 import { ApiError } from "../../service/api/client";
 import { BookOpenCheck, GraduationCap, ArrowLeft, Compass } from "lucide-react";
 
@@ -11,10 +11,10 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { session, status, error, signIn, registerAccount, refreshSession } = useAuth();
-  const role: AuthRole =
-    searchParams.get("role") === "teacher" ? "teacher" : "student";
+  const role: AuthRole = searchParams.get("role") === "admin"
+    ? "admin" : searchParams.get("role") === "teacher" ? "teacher" : "student";
   const tab: AuthTab =
-    searchParams.get("tab") === "register" ? "register" : "login";
+    role !== "admin" && searchParams.get("tab") === "register" ? "register" : "login";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +27,7 @@ export default function AuthPage() {
     setFormError("");
   }, [role, tab]);
 
-  const setMode = (nextTab: AuthTab, nextRole = role) => {
+  const setMode = (nextTab: AuthTab, nextRole: RegistrationRole = role === "admin" ? "student" : role) => {
     const params = new URLSearchParams();
     params.set("role", nextRole);
     if (nextTab === "register") params.set("tab", "register");
@@ -53,13 +53,13 @@ export default function AuthPage() {
     }
     setPending(true);
     try {
-      const authenticated = tab === "register"
+      const authenticated = tab === "register" && role !== "admin"
         ? await registerAccount(role, normalizedName, normalizedEmail, password, confirmation)
         : await signIn(normalizedEmail, password);
       navigatingAfterSubmit.current = true;
       navigate(authHomePath(authenticated), {
         replace: true,
-        state: tab === "register" ? { registrationComplete: true } : null,
+        state: tab === "register" && role !== "admin" ? { registrationComplete: true } : null,
       });
     } catch (cause) {
       const validation = cause instanceof ApiError
@@ -111,7 +111,7 @@ export default function AuthPage() {
 
           <div className="rounded-3xl border border-line bg-white px-5 py-7 shadow-card sm:px-8 sm:py-9">
             <h1 className="text-2xl font-extrabold leading-tight text-ink sm:text-3xl">
-              {tab === "register"
+              {role === "admin" ? "Đăng nhập quản trị" : tab === "register"
                 ? role === "teacher"
                   ? "Tạo tài khoản giáo viên"
                   : "Tạo tài khoản học sinh"
@@ -119,7 +119,7 @@ export default function AuthPage() {
             </h1>
 
             <p className="mt-3 text-sm leading-6 text-secondary">
-              {role === "teacher"
+              {role === "admin" ? "Truy cập hệ thống xét duyệt hồ sơ giáo viên." : role === "teacher"
                 ? tab === "register"
                   ? "Bắt đầu tổ chức lớp học và giao bài tập trên WebStudy."
                   : "Quản lý lớp học, bài tập và học liệu Địa lí 10."
@@ -127,7 +127,7 @@ export default function AuthPage() {
                   ? "Tham gia lớp học và khám phá học liệu Địa lí 10."
                   : "Vào lớp, làm bài tập và theo dõi tiến độ học tập."}
             </p>
-            <div
+            {role !== "admin" && <div
               role="group"
               aria-label="Chế độ tài khoản"
               className="mt-7 grid grid-cols-2 border-b border-line"
@@ -161,9 +161,9 @@ export default function AuthPage() {
                   </button>
                 );
               })}
-            </div>
+            </div>}
             <form className="mt-7 space-y-4" onSubmit={submit}>
-              <fieldset disabled={pending}>
+              {role !== "admin" && <fieldset disabled={pending}>
                 <legend className="mb-2 text-sm font-semibold text-ink">
                   Vai trò
                 </legend>
@@ -207,7 +207,7 @@ export default function AuthPage() {
                     );
                   })}
                 </div>
-              </fieldset>
+              </fieldset>}
               {tab === "register" && (
                 <label className="block">
                   <span className="mb-2 block text-sm font-semibold text-ink">
@@ -294,6 +294,9 @@ export default function AuthPage() {
                     : "Đăng nhập"}
               </button>
             </form>
+            {role !== "admin" && <Link to="/auth?role=admin" className="mt-5 inline-flex min-h-11 items-center text-sm font-semibold text-emerald focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald">
+              Dành cho quản trị viên xác minh
+            </Link>}
           </div>
         </div>
       </section>

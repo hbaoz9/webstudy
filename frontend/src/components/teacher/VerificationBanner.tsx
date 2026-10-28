@@ -39,14 +39,14 @@ export function VerificationBanner() {
   const description = isPending
     ? 'Bạn sẽ có thể tạo và quản lý lớp học sau khi hồ sơ được duyệt.'
     : isRejected
-      ? 'Xem lý do xét duyệt và thông tin về bước gửi lại minh chứng.'
-      : 'Cần xác minh để tạo và quản lý lớp học. Xem các bước tiếp theo.';
+      ? 'Xem lý do xét duyệt và gửi lại minh chứng.'
+      : 'Gửi thông tin và minh chứng để được mở quyền quản lý lớp.';
 
   const actionLabel = isPending
     ? 'Xem trạng thái'
     : isRejected
-      ? 'Xem trạng thái'
-      : 'Xem hướng dẫn';
+      ? 'Gửi lại hồ sơ'
+      : 'Xác minh ngay';
 
   return (
     <section

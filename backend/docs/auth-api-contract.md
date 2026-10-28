@@ -27,16 +27,27 @@ The local defaults are `http://localhost:5173` and `http://127.0.0.1:5173`. Do n
 | --- | --- | --- | --- |
 | POST | `/teacher/verification` | Teacher | 201, `data: Submission` |
 | GET | `/teacher/verification` | Teacher | 200, `data: {verification_status, verified_at, submissions}` |
+| GET | `/teacher-verifications/{id}/document` | Admin or the submitting teacher | 200, private file stream; 404 when a legacy file is unavailable |
 | GET | `/admin/teacher-verifications?status=pending\|verified\|rejected\|all` | Admin | 200, paginated `data: Submission[]`; default `pending` |
 | POST | `/admin/teacher-verifications/{id}/approve` | Admin | 200, `data: Submission` |
 | POST | `/admin/teacher-verifications/{id}/reject` | Admin | 200, `data: Submission` |
 
-Submit body (snake case): `full_name`, `school_name`, `school_address`, optional `teacher_code`, `position`, and `document: {name, type, size}`. The document object records metadata only; this checkpoint does not upload or store file contents. Rejection requires `reason` (up to 2000 characters). A teacher can resubmit after rejection, but cannot create a second pending submission or resubmit after verification. Each submission and decision remains in history with reviewer, time, and rejection reason.
+Submit as `multipart/form-data` (snake case): `full_name`, `school_name`, `school_address`, optional `teacher_code`, `position`, and a **file** field named `document`. The server accepts PDF, JPEG or PNG up to 5 MiB and checks the file's detected MIME type. Send the Sanctum CSRF header and credentials, but let the browser set the multipart boundary. A teacher can resubmit after rejection, but cannot create a second pending submission or resubmit after verification. Rejection requires `reason` (up to 2000 characters). Each submission and decision remains in history with reviewer, time, and rejection reason.
 
-`Submission`: `id`, `teacher_id`, `full_name`, `school_name`, `school_address`, `teacher_code`, `position`, `document`, `status`, `submitted_at`, `reviewed_at`, `reviewed_by`, `rejection_reason`.
+`Submission`: `id`, `teacher_id`, `full_name`, `school_name`, `school_address`, `teacher_code`, `position`, `document: {name, type, size, available}`, `status`, `submitted_at`, `reviewed_at`, `reviewed_by`, `rejection_reason`. Admin responses also include `teacher_email`. The response never contains the private storage path or a public file URL. The document endpoint checks the submission's policy before streaming and returns `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`.
+
+Files are stored under `storage/app/private/teacher-verifications` with generated names. Database changes are transactional; a newly stored file is removed if submission creation fails. The new nullable `document_path` column preserves existing metadata-only records. Such records show `available: false`; their files return 404 and an old pending record cannot be approved without a stored file. A rejected legacy record can be followed by a real upload. Already reviewed history is retained.
+
+## Verification admin
+
+The React page `/admin/teacher-verifications` lists pending submissions and recent decisions, streams available evidence through the authenticated endpoint, and records approval or a required rejection reason. Admins sign in at `/auth?role=admin`; the registration API does not accept `admin`.
+
+To create a **new** local admin, first configure the intended database connection, verify it explicitly, then run `php artisan webstudy:admin:create --email=admin@example.org --name="Admin Name"` from `backend/`. The command prompts for the password twice without a CLI password argument, requires at least 12 characters, and refuses an email already in use. It never promotes an existing account. Do not run it against a database other than the one you intend to administer.
+
+The application keeps uploaded evidence with the submission audit history; it does not delete files automatically. Before production rollout, the operator should approve a retention period and a documented removal process. The removal process should exclude pending submissions, delete expired private files through the storage disk, set `document_path` to null, and retain the review metadata and audit decisions. Backups must follow the same retention rule.
 
 ## Errors and integration
 
 API errors are JSON with `message`; validation errors also have `errors` keyed by input field. Typical statuses: 401 unauthenticated, 403 wrong role, 419 invalid/missing CSRF token, 422 invalid input or conflicting state, 429 rate limited. The `teacher.verified` middleware is available for future classroom routes; this checkpoint does not publish Classroom APIs.
 
-The new verification-history migration must be applied to each target environment by its operator. Only the guarded PostgreSQL runner may migrate `webstudy_test` automatically; do not run migrations on `webstudy` as part of test execution.
+The new nullable document-path migration must be applied to each target environment by its operator. Apply it to `webstudy_test` only after verifying the connection; do not run migrations on `webstudy` as part of test execution.

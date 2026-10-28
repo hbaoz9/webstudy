@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AUTH_UNAUTHORIZED_EVENT, ApiError, apiGet, apiRequest } from "./client";
+import { AUTH_UNAUTHORIZED_EVENT, ApiError, apiGet, apiRequest, getVerificationDocument } from "./client";
 
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
@@ -71,5 +71,45 @@ describe("Sanctum API client", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(apiGet("/auth/me")).rejects.toBeInstanceOf(ApiError);
     await expect(apiGet("/auth/me")).rejects.toThrow("Không thể kết nối máy chủ");
+  });
+
+  it("uploads a real file as multipart without forcing a JSON content type", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({ data: { status: "pending" } }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    const body = new FormData();
+    body.append("document", new Blob(["proof"], { type: "application/pdf" }), "proof.pdf");
+
+    await apiRequest("/teacher/verification", "POST", body);
+
+    expect(fetchMock.mock.calls[1][1].body).toBe(body);
+    expect(fetchMock.mock.calls[1][1].headers).toMatchObject({ "X-XSRF-TOKEN": "test=token" });
+    expect(fetchMock.mock.calls[1][1].headers).not.toHaveProperty("Content-Type");
+  });
+
+  it.each(["image/jpeg", "image/png", "application/pdf"])("loads a private %s document as a blob", async (contentType) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("proof", { headers: { "Content-Type": contentType } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getVerificationDocument(12);
+
+    expect(result.contentType).toBe(contentType);
+    expect(await result.blob.text()).toBe("proof");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/teacher-verifications/12/document");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: "include", method: "GET" });
+  });
+
+  it("handles private document authorization errors and rejects unexpected content", async () => {
+    const unauthorized = vi.fn();
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, unauthorized);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ message: "Unauthenticated." }, 401))
+      .mockResolvedValueOnce(json({ message: "Forbidden." }, 403))
+      .mockResolvedValueOnce(new Response("<html />", { headers: { "Content-Type": "text/html" } })));
+
+    await expect(getVerificationDocument(1)).rejects.toMatchObject({ status: 401 });
+    expect(unauthorized).toHaveBeenCalledOnce();
+    await expect(getVerificationDocument(1)).rejects.toMatchObject({ status: 403 });
+    await expect(getVerificationDocument(1)).rejects.toThrow("định dạng minh chứng không được hỗ trợ");
   });
 });

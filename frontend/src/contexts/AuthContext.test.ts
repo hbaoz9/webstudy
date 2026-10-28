@@ -21,4 +21,8 @@ describe("auth landing path", () => {
   it("sends verified teachers to their dashboard", () => {
     expect(authHomePath(session("teacher", "verified"))).toBe("/teacher/dashboard");
   });
+
+  it("sends admins to the verification queue", () => {
+    expect(authHomePath(session("admin", null))).toBe("/admin/teacher-verifications");
+  });
 });

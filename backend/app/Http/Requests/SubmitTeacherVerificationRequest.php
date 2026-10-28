@@ -19,10 +19,7 @@ class SubmitTeacherVerificationRequest extends FormRequest
             'school_address' => ['required', 'string', 'max:255'],
             'teacher_code' => ['nullable', 'string', 'max:255'],
             'position' => ['required', 'string', 'max:255'],
-            'document' => ['required', 'array:name,type,size'],
-            'document.name' => ['required', 'string', 'max:255'],
-            'document.type' => ['required', 'string', 'max:100'],
-            'document.size' => ['required', 'integer', 'min:1', 'max:10485760'],
+            'document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'mimetypes:application/pdf,image/jpeg,image/png', 'max:5120'],
         ];
     }
 }

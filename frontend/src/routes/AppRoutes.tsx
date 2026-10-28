@@ -18,6 +18,7 @@ import VerifiedTeacherRoute from "./VerifiedTeacherRoute";
 
 const LandingPage = lazy(() => import("../pages/public/LandingPage"));
 const AuthPage = lazy(() => import("../pages/auth/AuthPage"));
+const TeacherVerificationsPage = lazy(() => import("../pages/admin/TeacherVerificationsPage"));
 
 const TeacherDashboardPage = lazy(() => import("../pages/teacher/TeacherDashboardPage"));
 const TeacherClassDetailPage = lazy(() => import("../pages/teacher/TeacherClassDetailPage"));
@@ -102,6 +103,10 @@ export default function AppRoutes() {
 
       <Route path="/auth/register/success/student" element={<Navigate to="/student/dashboard" replace />} />
       <Route path="/auth/register/success/teacher" element={<Navigate to="/teacher/verification" replace />} />
+
+      <Route element={<RequireRole role="admin" />}>
+        <Route path="/admin/teacher-verifications" element={<TeacherVerificationsPage />} />
+      </Route>
 
       {/* Teacher */}
       <Route element={<RequireRole role="teacher" />}>

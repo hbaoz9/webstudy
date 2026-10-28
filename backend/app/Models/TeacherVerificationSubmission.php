@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeacherVerificationSubmission extends Model
 {
-    protected $fillable = ['full_name', 'school_name', 'school_address', 'teacher_code', 'position', 'document_name', 'document_type', 'document_size'];
+    protected $fillable = ['full_name', 'school_name', 'school_address', 'teacher_code', 'position', 'document_name', 'document_type', 'document_size', 'document_path'];
 
     protected function casts(): array
     {

@@ -5,22 +5,30 @@ namespace Tests\Feature;
 use App\Models\TeacherVerificationSubmission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class TeacherVerificationApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake('local');
+    }
+
     public function test_teacher_submits_admin_rejects_and_teacher_resubmits_for_approval(): void
     {
         $teacher = $this->teacher();
         $admin = $this->userWithRole('admin');
 
-        $this->actingAs($teacher)->postJson('/api/teacher/verification', $this->submission())
+        $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
             ->assertCreated()->assertJsonPath('data.status', 'pending');
-        $this->postJson('/api/teacher/verification', $this->submission())
+        $this->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
             ->assertUnprocessable();
         $this->getJson('/api/teacher/verification')->assertOk()
             ->assertJsonPath('data.verification_status', 'pending')->assertJsonCount(1, 'data.submissions');
@@ -31,7 +39,7 @@ class TeacherVerificationApiTest extends TestCase
         $this->postJson('/api/admin/teacher-verifications/1/reject', ['reason' => 'Missing proof'])
             ->assertOk()->assertJsonPath('data.status', 'rejected');
 
-        $this->actingAs($teacher)->postJson('/api/teacher/verification', $this->submission())
+        $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
             ->assertCreated()->assertJsonPath('data.id', 2);
         $this->actingAs($admin)->postJson('/api/admin/teacher-verifications/2/approve')
             ->assertOk()->assertJsonPath('data.status', 'verified');
@@ -49,9 +57,9 @@ class TeacherVerificationApiTest extends TestCase
         $teacher = $this->teacher();
         $otherTeacher = $this->teacher();
         $student = User::factory()->create()->refresh();
-        $this->actingAs($teacher)->postJson('/api/teacher/verification', $this->submission())->assertCreated();
+        $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])->assertCreated();
 
-        $this->actingAs($student)->postJson('/api/teacher/verification', $this->submission())->assertForbidden();
+        $this->actingAs($student)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])->assertForbidden();
         $this->postJson('/api/admin/teacher-verifications/1/approve')->assertForbidden();
         $this->actingAs($otherTeacher)->postJson('/api/admin/teacher-verifications/1/reject', ['reason' => 'No'])
             ->assertForbidden();
@@ -69,7 +77,7 @@ class TeacherVerificationApiTest extends TestCase
         $admin = $this->userWithRole('admin');
         $this->actingAs($teacher)->postJson('/api/teacher/verification', ['full_name' => ''])
             ->assertUnprocessable()->assertJsonValidationErrors(['full_name', 'school_name', 'document']);
-        $this->postJson('/api/teacher/verification', $this->submission())->assertCreated();
+        $this->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])->assertCreated();
         $this->actingAs($admin)->postJson('/api/admin/teacher-verifications/1/approve')->assertOk();
         $this->postJson('/api/admin/teacher-verifications/1/approve')->assertUnprocessable();
         $this->assertDatabaseCount('teacher_verification_submissions', 1);
@@ -110,7 +118,7 @@ class TeacherVerificationApiTest extends TestCase
             'full_name' => 'Teacher One', 'school_name' => 'School A',
             'school_address' => '123 Main Street', 'teacher_code' => 'T-001',
             'position' => 'Teacher',
-            'document' => ['name' => 'proof.pdf', 'type' => 'application/pdf', 'size' => 12345],
+            'document' => UploadedFile::fake()->image('proof.png'),
         ];
     }
 }
