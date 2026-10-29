@@ -54,6 +54,7 @@ function findColumnIndex(
 export async function parseRosterExcel(
   file: File,
   className: string,
+  options: { backendImport?: boolean } = {},
 ): Promise<RosterImportRow[]> {
   const isExcelFile = /\.(xlsx|xls)$/i.test(
     file.name,
@@ -63,6 +64,10 @@ export async function parseRosterExcel(
     throw new Error(
       'Chỉ chấp nhận file Excel có định dạng .xlsx hoặc .xls.',
     );
+  }
+
+  if (file.size === 0) {
+    throw new Error('File Excel trống.');
   }
 
   if (file.size > MAX_FILE_SIZE) {
@@ -81,6 +86,10 @@ export async function parseRosterExcel(
   const workbook = read(fileBuffer, {
     type: 'array',
   });
+
+  if (options.backendImport && workbook.SheetNames.length !== 1) {
+    throw new Error('File phải có đúng một trang tính để tránh nhập nhầm danh sách.');
+  }
 
   const firstSheetName = workbook.SheetNames[0];
 
@@ -142,6 +151,10 @@ export async function parseRosterExcel(
     );
   }
 
+  if (options.backendImport && studentCodeColumn === -1) {
+    throw new Error('Không tìm thấy cột "Mã học sinh" trong file Excel.');
+  }
+
   const nonEmptyRows = dataRows
     .map((row, index) => ({
       row,
@@ -198,7 +211,7 @@ export async function parseRosterExcel(
             : '';
 
         const studentCode =
-          providedCode ||
+          options.backendImport ? providedCode : providedCode ||
           `${classPrefix}-${String(
             orderNumber,
           ).padStart(2, '0')}`;
@@ -207,6 +220,18 @@ export async function parseRosterExcel(
 
         if (!fullName) {
           errors.push('Thiếu họ và tên');
+        }
+
+        if (options.backendImport && fullName.length > 255) {
+          errors.push('Họ và tên không được quá 255 ký tự');
+        }
+
+        if (options.backendImport && !providedCode) {
+          errors.push('Thiếu mã học sinh');
+        }
+
+        if (options.backendImport && providedCode.length > 64) {
+          errors.push('Mã học sinh không được quá 64 ký tự');
         }
 
         if (!hasValidOrderNumber) {
@@ -222,7 +247,7 @@ export async function parseRosterExcel(
           studentCode,
           codeSource: providedCode
             ? 'provided'
-            : 'generated',
+            : options.backendImport ? 'provided' : 'generated',
           errors,
         };
       },
@@ -265,6 +290,7 @@ export async function parseRosterExcel(
 //mau san
 export async function downloadRosterTemplate(
   className: string,
+  backendImport = false,
 ) {
   const {
     utils,
@@ -283,7 +309,7 @@ export async function downloadRosterTemplate(
     [
       1,
       'Nguyễn Văn A',
-      `${classPrefix}-01`,
+      backendImport ? '' : `${classPrefix}-01`,
     ],
     [
       2,

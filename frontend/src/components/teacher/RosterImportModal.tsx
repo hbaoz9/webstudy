@@ -1,4 +1,5 @@
 import {
+  useRef,
   useState,
   type ChangeEvent,
 } from 'react';
@@ -21,6 +22,7 @@ import {
   downloadRosterTemplate,
   parseRosterExcel,
 } from '../../utils/excelRoster';
+import { ApiError } from '../../service/api/client';
 
 type RosterImportModalProps = {
   isOpen: boolean;
@@ -28,7 +30,8 @@ type RosterImportModalProps = {
   onClose: () => void;
   onImport: (
     rows: RosterImportRow[],
-  ) => void;
+  ) => void | Promise<void>;
+  backendImport?: boolean;
 };
 
 export function RosterImportModal({
@@ -36,6 +39,7 @@ export function RosterImportModal({
   className,
   onClose,
   onImport,
+  backendImport = false,
 }: RosterImportModalProps) {
   const [fileName, setFileName] =
     useState('');
@@ -48,6 +52,9 @@ export function RosterImportModal({
 
   const [isReading, setIsReading] =
     useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const importLock = useRef(false);
+  const [confirming, setConfirming] = useState(false);
 
   if (!isOpen) {
     return null;
@@ -65,16 +72,17 @@ export function RosterImportModal({
   const canImport =
     rows.length > 0 &&
     invalidRowCount === 0 &&
-    !isReading;
+    !isReading && !isSubmitting;
 
   const resetModal = () => {
     setFileName('');
     setRows([]);
     setError('');
+    setConfirming(false);
   };
 
   const handleClose = () => {
-    if (isReading) {
+    if (isReading || isSubmitting || importLock.current) {
       return;
     }
 
@@ -89,6 +97,7 @@ export function RosterImportModal({
 
         await downloadRosterTemplate(
           className,
+          backendImport,
         );
       } catch {
         setError(
@@ -112,6 +121,7 @@ export function RosterImportModal({
     setFileName(selectedFile.name);
     setRows([]);
     setError('');
+    setConfirming(false);
     setIsReading(true);
 
     try {
@@ -119,6 +129,7 @@ export function RosterImportModal({
         await parseRosterExcel(
           selectedFile,
           className,
+          { backendImport },
         );
 
       setRows(parsedRows);
@@ -134,14 +145,47 @@ export function RosterImportModal({
     }
   };
 
-  const handleConfirmImport = () => {
-    if (!canImport) {
+  const handleConfirmImport = async () => {
+    if (!canImport || importLock.current) {
       return;
     }
-
-    onImport(rows);
-    resetModal();
-    onClose();
+    if (backendImport && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    importLock.current = true;
+    setIsSubmitting(true);
+    setError('');
+    try {
+      await onImport(rows);
+      resetModal();
+      onClose();
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 422) {
+        const rowErrors = Object.entries(cause.errors).filter(([key]) => /^rows\.\d+/.test(key));
+        if (rowErrors.length > 0) {
+          setRows((current) => current.map((row, index) => ({
+            ...row,
+            errors: [...row.errors, ...rowErrors.filter(([key]) => key.startsWith(`rows.${index}.`) || key === `rows.${index}`)
+              .flatMap(([, messages]) => messages)],
+          })));
+        }
+        setError(`${cause.message} Vui lòng kiểm tra lỗi từng dòng hoặc chọn lại file.`);
+      } else if (cause instanceof ApiError && cause.status === 401) {
+        setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+      } else if (cause instanceof ApiError && cause.status === 403) {
+        setError('Bạn không có quyền nhập danh sách cho lớp này.');
+      } else if (cause instanceof ApiError && cause.status === 404) {
+        setError('Không tìm thấy lớp học.');
+      } else if (cause instanceof ApiError && cause.status === 409) {
+        setError(cause.message);
+      } else {
+        setError(cause instanceof Error ? cause.message : 'Không thể nhập danh sách học sinh.');
+      }
+    } finally {
+      importLock.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -200,8 +244,7 @@ export function RosterImportModal({
                 </strong>
 
                 <span className="mt-1 block text-xs leading-5 text-muted">
-                  Gồm STT, Họ và tên và
-                  Mã học sinh.
+                  Gồm STT, Họ và tên và Mã học sinh.{backendImport ? ' Hãy điền mã thật trước khi nhập.' : ''}
                 </span>
               </span>
             </button>
@@ -212,7 +255,7 @@ export function RosterImportModal({
                 type="file"
                 accept=".xlsx,.xls"
                 onChange={handleFileChange}
-                disabled={isReading}
+                disabled={isReading || isSubmitting}
                 className="hidden"
               />
 
@@ -249,6 +292,7 @@ export function RosterImportModal({
           )}
 
           {/* Tổng kết dữ liệu */}
+          {backendImport && rows.length > 0 && <p className="mt-5 rounded-xl bg-slate-50 p-3 text-sm text-secondary">Mã học sinh đã có sẽ được cập nhật họ tên và STT; mã mới sẽ được thêm. Dòng không có trong file vẫn được giữ. Backend có thể đối chiếu lại yêu cầu tham gia đang chờ. Việc nhập không tự tạo tài khoản hoặc membership.</p>}
           {rows.length > 0 && (
             <>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -264,11 +308,11 @@ export function RosterImportModal({
 
                 <div className="rounded-xl bg-emerald/10 px-4 py-3">
                   <p className="text-xs text-emerald">
-                    Mã được tự sinh
+                    {backendImport ? 'Dòng hợp lệ' : 'Mã được tự sinh'}
                   </p>
 
                   <p className="mt-1 text-xl font-extrabold text-emerald">
-                    {generatedCodeCount}
+                    {backendImport ? rows.length - invalidRowCount : generatedCodeCount}
                   </p>
                 </div>
 
@@ -303,7 +347,7 @@ export function RosterImportModal({
 
               {/* Bảng xem trước */}
               <div className="mt-5 overflow-x-auto rounded-xl border border-line">
-                <table className="min-w-full text-left text-sm">
+                <table className="w-full min-w-[620px] text-left text-sm">
                   <thead className="bg-slate-50 text-xs text-secondary">
                     <tr>
                       <th className="px-4 py-3">
@@ -394,6 +438,7 @@ export function RosterImportModal({
               </div>
             </>
           )}
+          {backendImport && confirming && <p role="status" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Xác nhận gửi {rows.length} dòng lên Backend? Các mục trùng mã sẽ được cập nhật theo file.</p>}
         </div>
 
         {/* Nút cuối modal */}
@@ -401,7 +446,7 @@ export function RosterImportModal({
           <button
             type="button"
             onClick={handleClose}
-            disabled={isReading}
+            disabled={isReading || isSubmitting}
             className="min-h-11 rounded-full border border-line px-5 text-sm font-bold text-secondary transition hover:bg-slate-50 disabled:opacity-50"
           >
             Hủy
@@ -409,12 +454,12 @@ export function RosterImportModal({
 
           <button
             type="button"
-            onClick={handleConfirmImport}
+            onClick={() => void handleConfirmImport()}
             disabled={!canImport}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald px-5 text-sm font-bold text-white transition hover:bg-emerald/90 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
           >
             <FileSpreadsheet className="size-4" />
-            Nhập {rows.length || ''} học sinh
+            {isSubmitting ? 'Đang nhập…' : backendImport && !confirming ? `Kiểm tra và xác nhận ${rows.length || ''} học sinh` : `Nhập ${rows.length || ''} học sinh`}
           </button>
         </footer>
       </div>

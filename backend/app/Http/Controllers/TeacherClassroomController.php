@@ -17,7 +17,9 @@ use App\Services\ClassroomService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
 
 class TeacherClassroomController extends Controller
 {
@@ -57,11 +59,39 @@ class TeacherClassroomController extends Controller
         return new ClassroomResource($this->withActiveCount($service->archive($request->user(), $classroom)));
     }
 
-    public function roster(Classroom $classroom): AnonymousResourceCollection
+    public function roster(Request $request, Classroom $classroom): AnonymousResourceCollection
     {
         Gate::authorize('manage', $classroom);
 
-        return ClassRosterEntryResource::collection($classroom->rosterEntries()->orderBy('order_number')->paginate(100));
+        $filters = Validator::make($request->query(), [
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'status' => ['sometimes', 'in:joined,not_joined,conflict'],
+        ])->validate();
+
+        $roster = $classroom->rosterEntries();
+        $search = trim($filters['search'] ?? '');
+        if ($search !== '') {
+            // Escape LIKE metacharacters so a search term is always literal text.
+            $term = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($search));
+            $pattern = '%'.$term.'%';
+            // Check the function on this connection; a database without unaccent keeps basic search.
+            $hasUnaccent = DB::connection()->getDriverName() === 'pgsql'
+                && (int) DB::connection()->selectOne(
+                    "SELECT CASE WHEN to_regprocedure('unaccent(text)') IS NULL THEN 0 ELSE 1 END AS available"
+                )->available === 1;
+            $roster->where(function ($query) use ($pattern, $hasUnaccent): void {
+                $nameExpression = $hasUnaccent ? 'LOWER(unaccent(full_name))' : 'LOWER(full_name)';
+                $namePattern = $hasUnaccent ? 'LOWER(unaccent(?))' : '?';
+                $query->whereRaw("$nameExpression LIKE $namePattern ESCAPE '!'", [$pattern])
+                    ->orWhereRaw("LOWER(student_code) LIKE ? ESCAPE '!'", [$pattern]);
+            });
+        }
+        if (isset($filters['status'])) {
+            $roster->where('status', $filters['status']);
+        }
+
+        return ClassRosterEntryResource::collection($roster->orderBy('order_number')->orderBy('id')->paginate(100)->withQueryString());
     }
 
     public function importRoster(ImportRosterRequest $request, Classroom $classroom, ClassroomService $service): JsonResponse

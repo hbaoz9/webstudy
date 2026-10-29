@@ -88,6 +88,8 @@ class ClassroomApiTest extends TestCase
         $this->postJson("/api/teacher/classrooms/$id/archive")->assertOk()->assertJsonPath('data.status', 'archived');
         $this->getJson("/api/teacher/classrooms/$id/roster")->assertOk()
             ->assertJsonPath('data.0.status', 'not_joined')->assertJsonPath('meta.total', 1);
+        $this->getJson("/api/teacher/classrooms/$id/roster?search=updated&status=not_joined")
+            ->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.status', 'not_joined');
         $this->getJson("/api/teacher/classrooms/$id")->assertOk()->assertJsonPath('data.status', 'archived');
         $this->postJson("/api/teacher/classrooms/$id/archive")->assertUnprocessable();
         $this->putJson("/api/teacher/classrooms/$id", ['name' => '10A3', 'academic_year' => '2026-2027'])->assertUnprocessable();
@@ -117,6 +119,93 @@ class ClassroomApiTest extends TestCase
         $this->getJson("/api/teacher/classrooms/{$first->id}/roster?page=2")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.orderNumber', 101)
             ->assertJsonMissing(['fullName' => 'Other class student']);
+    }
+
+    public function test_roster_search_filters_before_pagination_and_keeps_other_class_private(): void
+    {
+        $classroom = $this->createClassroom();
+        $otherClassroom = $this->createClassroom();
+        for ($number = 1; $number <= 150; $number++) {
+            $classroom->rosterEntries()->create([
+                'order_number' => $number,
+                'full_name' => "Student $number",
+                'student_code' => sprintf('HS%04d', $number),
+            ]);
+        }
+        $otherClassroom->rosterEntries()->create([
+            'order_number' => 1, 'full_name' => 'Hidden Name', 'student_code' => 'HIDDEN-1',
+        ]);
+        $url = "/api/teacher/classrooms/{$classroom->id}/roster";
+        $this->actingAs($classroom->teacher->user)->getJson($url)
+            ->assertOk()->assertJsonCount(100, 'data')->assertJsonPath('meta.total', 150);
+        $this->getJson($url.'?page=2')
+            ->assertOk()->assertJsonCount(50, 'data')->assertJsonPath('data.49.studentCode', 'HS0150');
+        $this->getJson($url.'?search=hs0150')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.studentCode', 'HS0150')
+            ->assertJsonPath('meta.total', 1);
+        $this->getJson($url.'?search=STUDENT%20150')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.fullName', 'Student 150');
+        $this->getJson($url.'?search=Hidden')
+            ->assertOk()->assertJsonCount(0, 'data')->assertJsonPath('meta.total', 0);
+        $this->getJson($url.'?search=%20%20')
+            ->assertOk()->assertJsonPath('meta.total', 150);
+    }
+
+    public function test_roster_status_and_search_are_combined_and_order_is_stable(): void
+    {
+        $classroom = $this->createClassroom();
+        $student = User::factory()->create()->refresh();
+        $joined = $classroom->rosterEntries()->create([
+            'order_number' => 1, 'full_name' => 'Match Joined', 'student_code' => 'JOIN-1',
+        ]);
+        $joined->forceFill(['status' => 'joined', 'linked_user_id' => $student->id])->save();
+        $notJoined = $classroom->rosterEntries()->create([
+            'order_number' => 1, 'full_name' => 'Match Waiting', 'student_code' => 'WAIT-1',
+        ]);
+        $conflict = $classroom->rosterEntries()->create([
+            'order_number' => 2, 'full_name' => 'Match Conflict', 'student_code' => 'CONFLICT-1',
+        ]);
+        $conflict->forceFill(['status' => 'conflict'])->save();
+        $url = "/api/teacher/classrooms/{$classroom->id}/roster";
+        $this->actingAs($classroom->teacher->user);
+        $expectedIds = [$joined->id, $notJoined->id];
+        sort($expectedIds);
+        $expectedIds[] = $conflict->id;
+        $this->assertSame($expectedIds, array_column($this->getJson($url)->assertOk()->json('data'), 'id'));
+        foreach (['joined' => $joined, 'not_joined' => $notJoined, 'conflict' => $conflict] as $status => $entry) {
+            $this->getJson($url.'?status='.$status)
+                ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $entry->id)
+                ->assertJsonPath('meta.total', 1);
+        }
+        $this->getJson($url.'?search=match&status=conflict')
+            ->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.id', $conflict->id);
+        $this->getJson($url.'?search=waiting&status=joined')
+            ->assertOk()->assertJsonCount(0, 'data')->assertJsonPath('meta.total', 0);
+        $this->getJson($url.'?search=missing')
+            ->assertOk()->assertJsonCount(0, 'data')->assertJsonPath('meta.total', 0);
+    }
+
+    public function test_roster_search_treats_like_metacharacters_literally_and_rejects_invalid_parameters(): void
+    {
+        $classroom = $this->createClassroom();
+        $classroom->rosterEntries()->create([
+            'order_number' => 1, 'full_name' => 'Percent % Name', 'student_code' => 'PCT-1',
+        ]);
+        $classroom->rosterEntries()->create([
+            'order_number' => 2, 'full_name' => 'Under_score Name', 'student_code' => 'UND-2',
+        ]);
+        $url = "/api/teacher/classrooms/{$classroom->id}/roster";
+        $this->actingAs($classroom->teacher->user);
+        $this->getJson($url.'?search=%25')->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.studentCode', 'PCT-1');
+        $this->getJson($url.'?search=_')->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.studentCode', 'UND-2');
+        $this->getJson($url.'?status=active')->assertUnprocessable()->assertJsonValidationErrors('status');
+        $this->getJson($url.'?page=0')->assertUnprocessable()->assertJsonValidationErrors('page');
+        $this->getJson($url.'?page=abc')->assertUnprocessable()->assertJsonValidationErrors('page');
+        $this->getJson($url.'?search='.str_repeat('a', 101))
+            ->assertUnprocessable()->assertJsonValidationErrors('search');
+        $this->getJson($url.'?search[]=bad')->assertUnprocessable()->assertJsonValidationErrors('search');
     }
 
     public function test_join_reject_resubmit_manual_verify_and_leave(): void

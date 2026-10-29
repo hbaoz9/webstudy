@@ -26,8 +26,27 @@ export type TeacherRosterPage = {
   meta: { current_page: number; last_page: number; total: number };
 };
 
-export function getTeacherClassroomRoster(id: string, page = 1): Promise<TeacherRosterPage> {
-  return apiGet<TeacherRosterPage>(`/teacher/classrooms/${encodeURIComponent(id)}/roster?page=${page}`);
+export type TeacherRosterStatusFilter = TeacherRosterEntry["status"] | "all";
+
+export function getTeacherClassroomRoster(
+  id: string,
+  page = 1,
+  search = "",
+  status: TeacherRosterStatusFilter = "all",
+): Promise<TeacherRosterPage> {
+  const params = new URLSearchParams({ page: String(page) });
+  if (search.trim()) params.set("search", search.trim());
+  if (status !== "all") params.set("status", status);
+  return apiGet<TeacherRosterPage>(`/teacher/classrooms/${encodeURIComponent(id)}/roster?${params.toString()}`);
+}
+
+export type TeacherRosterImportRow = Pick<TeacherRosterEntry, "orderNumber" | "fullName" | "studentCode">;
+
+export async function importTeacherClassroomRoster(id: string, rows: TeacherRosterImportRow[]): Promise<{ created: number; updated: number }> {
+  const response = await apiRequest<{ data: { created: number; updated: number } }>(
+    `/teacher/classrooms/${encodeURIComponent(id)}/roster/import`, "POST", { rows },
+  );
+  return response.data;
 }
 
 export type CreateClassroomInput = {
