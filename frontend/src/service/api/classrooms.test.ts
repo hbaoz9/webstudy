@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { archiveTeacherClassroom, createTeacherClassroom, getTeacherClassroom, listTeacherClassrooms, updateTeacherClassroom } from "./classrooms";
+import { archiveTeacherClassroom, createTeacherClassroom, getTeacherClassroom, getTeacherClassroomRoster, listTeacherClassrooms, updateTeacherClassroom } from "./classrooms";
 
 const classroom = { id: "class-uuid", name: "10A1", code: "ABC234", academicYear: "2026-2027", description: null,
   coverImage: null, status: "active", createdAt: "2026-10-28T00:00:00Z", studentCount: 0 };
@@ -60,5 +60,18 @@ describe("Teacher Classroom API contract", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(input);
     expect(fetchMock.mock.calls[3][0]).toBe("/api/teacher/classrooms/class-uuid/archive");
     expect(fetchMock.mock.calls[3][1].method).toBe("POST");
+  });
+
+  it("reads only the requested classroom roster page and preserves backend fields", async () => {
+    const entry = { id: "entry-1", orderNumber: 1, fullName: "Nguyễn An", studentCode: "10A1-01", linkedUserId: null, status: "not_joined" };
+    const fetchMock = vi.fn().mockResolvedValue(json({ data: [entry], meta: { current_page: 2, last_page: 3, total: 201 } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getTeacherClassroomRoster("class/one", 2)).resolves.toEqual({ data: [entry], meta: { current_page: 2, last_page: 3, total: 201 } });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/teacher/classrooms/class%2Fone/roster?page=2");
+  });
+
+  it.each([401, 403, 404, 500])("does not fall back to prototype roster on HTTP %i", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ message: "Request failed" }, status)));
+    await expect(getTeacherClassroomRoster("class-uuid")).rejects.toMatchObject({ status });
   });
 });

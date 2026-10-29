@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../service/api/client";
 import { archiveTeacherClassroom, getTeacherClassroom, updateTeacherClassroom, type TeacherClassroom } from "../../service/api/classrooms";
 import { getAcademicYearOptions } from "../../utils/classroom";
+import { TeacherRosterReadSection } from "../../components/teacher/TeacherRosterReadSection";
 
 export default function TeacherClassCoreDetailPage() {
   const { classId } = useParams();
@@ -227,6 +228,7 @@ export default function TeacherClassCoreDetailPage() {
             </div>}
         </div>}
       </section>
+      <TeacherRosterReadSection key={classroom.id} classroomId={classroom.id} archived={classroom.status === "archived"} />
     </>}
   </div>;
 }

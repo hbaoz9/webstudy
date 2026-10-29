@@ -12,6 +12,24 @@ export type TeacherClassroom = {
   studentCount: number;
 };
 
+export type TeacherRosterEntry = {
+  id: string;
+  orderNumber: number;
+  fullName: string;
+  studentCode: string;
+  linkedUserId: number | null;
+  status: "joined" | "not_joined" | "conflict";
+};
+
+export type TeacherRosterPage = {
+  data: TeacherRosterEntry[];
+  meta: { current_page: number; last_page: number; total: number };
+};
+
+export function getTeacherClassroomRoster(id: string, page = 1): Promise<TeacherRosterPage> {
+  return apiGet<TeacherRosterPage>(`/teacher/classrooms/${encodeURIComponent(id)}/roster?page=${page}`);
+}
+
 export type CreateClassroomInput = {
   name: string;
   academic_year: string;
