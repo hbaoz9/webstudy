@@ -16,18 +16,23 @@ import type {
   ManualVerificationPayload,
   ManualVerificationReason,
 } from '../../types/teacher';
+import type { ClassroomJoinRequest } from '../../service/api/joinRequests';
+import type { TeacherRosterEntry } from '../../service/api/classrooms';
 
 import {
   normalizeStudentCode,
 } from '../../utils/rosterMatching';
 
 type ManualVerificationModalProps = {
-  request: JoinRequest | null;
-  rosterEntries: ClassRosterEntry[];
+  request: JoinRequest | ClassroomJoinRequest | null;
+  rosterEntries: (ClassRosterEntry | TeacherRosterEntry)[];
   onClose: () => void;
   onConfirm: (
     payload: ManualVerificationPayload,
   ) => void;
+  backendMode?: boolean;
+  busy?: boolean;
+  error?: string;
 };
 
 const reasonOptions: {
@@ -58,7 +63,11 @@ export function ManualVerificationModal({
   rosterEntries,
   onClose,
   onConfirm,
+  backendMode = false,
+  busy = false,
+  error = '',
 }: ManualVerificationModalProps) {
+  const [confirmed, setConfirmed] = useState(false);
   const [
     selectedRosterEntryId,
     setSelectedRosterEntryId,
@@ -92,8 +101,7 @@ export function ManualVerificationModal({
 
         const isAvailable =
           !entry.linkedUserId ||
-          entry.linkedUserId ===
-            request.studentId;
+          String(entry.linkedUserId) === String(request.studentId);
 
         return (
           hasMatchingCode && isAvailable
@@ -106,6 +114,7 @@ export function ManualVerificationModal({
 
     setReason('');
     setNote('');
+    setConfirmed(false);
   }, [request, rosterEntries]);
 
   if (!request) {
@@ -122,15 +131,16 @@ export function ManualVerificationModal({
   const selectedEntryClaimedByOther =
     Boolean(
       selectedEntry?.linkedUserId &&
-        selectedEntry.linkedUserId !==
-          request.studentId,
+        String(selectedEntry.linkedUserId) !== String(request.studentId),
     );
 
   const canConfirm =
     Boolean(selectedEntry) &&
     !selectedEntryClaimedByOther &&
     Boolean(reason) &&
-    note.trim().length >= 5;
+    note.trim().length >= 5 &&
+    note.trim().length <= 2000 &&
+    !busy;
 
   const handleConfirm = () => {
     if (
@@ -141,6 +151,10 @@ export function ManualVerificationModal({
       return;
     }
 
+    if (backendMode && !confirmed) {
+      setConfirmed(true);
+      return;
+    }
     onConfirm({
       requestId: request.id,
       rosterEntryId: selectedEntry.id,
@@ -175,6 +189,7 @@ export function ManualVerificationModal({
           <button
             type="button"
             onClick={onClose}
+            disabled={busy}
             className="grid size-10 shrink-0 place-items-center rounded-full text-secondary transition hover:bg-slate-100"
             aria-label="Đóng"
           >
@@ -258,11 +273,10 @@ export function ManualVerificationModal({
                   value={
                     selectedRosterEntryId
                   }
-                  onChange={(event) =>
-                    setSelectedRosterEntryId(
-                      event.target.value,
-                    )
-                  }
+                  onChange={(event) => {
+                    setSelectedRosterEntryId(event.target.value);
+                    setConfirmed(false);
+                  }}
                   className="mt-2 min-h-11 w-full rounded-xl border border-line bg-white px-4 text-sm text-ink outline-none transition focus:border-emerald focus:ring-2 focus:ring-emerald/10"
                 >
                   <option value="">
@@ -274,8 +288,7 @@ export function ManualVerificationModal({
                       const claimedByOther =
                         Boolean(
                           entry.linkedUserId &&
-                            entry.linkedUserId !==
-                              request.studentId,
+                            String(entry.linkedUserId) !== String(request.studentId),
                         );
 
                       return (
@@ -339,14 +352,10 @@ export function ManualVerificationModal({
                 <select
                   id="verification-reason"
                   value={reason}
-                  onChange={(event) =>
-                    setReason(
-                      event.target
-                        .value as
-                        | ManualVerificationReason
-                        | '',
-                    )
-                  }
+                  onChange={(event) => {
+                    setReason(event.target.value as ManualVerificationReason | '');
+                    setConfirmed(false);
+                  }}
                   className="mt-2 min-h-11 w-full rounded-xl border border-line bg-white px-4 text-sm text-ink outline-none transition focus:border-emerald focus:ring-2 focus:ring-emerald/10"
                 >
                   <option value="">
@@ -378,11 +387,10 @@ export function ManualVerificationModal({
                 <textarea
                   id="verification-note"
                   value={note}
-                  onChange={(event) =>
-                    setNote(
-                      event.target.value,
-                    )
-                  }
+                  onChange={(event) => {
+                    setNote(event.target.value);
+                    setConfirmed(false);
+                  }}
                   rows={3}
                   placeholder="Ví dụ: Đã kiểm tra trực tiếp với học sinh và xác nhận đúng người."
                   className="mt-2 w-full resize-none rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink outline-none transition placeholder:text-muted focus:border-emerald focus:ring-2 focus:ring-emerald/10"
@@ -397,10 +405,13 @@ export function ManualVerificationModal({
           )}
         </div>
 
+        {confirmed && backendMode && <p className="mx-6 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Xác nhận liên kết tài khoản với học sinh đã chọn và duyệt yêu cầu? Thao tác này tạo membership khi Backend chấp nhận.</p>}
+        {error && <p role="alert" className="mx-6 mb-3 text-sm text-red-600">{error}</p>}
         <footer className="flex flex-col-reverse gap-3 border-t border-line px-6 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onClose}
+            disabled={busy}
             className="min-h-11 rounded-full border border-line px-5 text-sm font-bold text-secondary transition hover:bg-slate-50"
           >
             Hủy
@@ -413,7 +424,7 @@ export function ManualVerificationModal({
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald px-5 text-sm font-bold text-white transition hover:bg-emerald/90 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
           >
             <ShieldCheck className="size-4" />
-            Xác nhận và duyệt
+            {busy ? 'Đang xử lý…' : confirmed && backendMode ? 'Đồng ý xác minh và duyệt' : 'Xác nhận và duyệt'}
           </button>
         </footer>
       </div>

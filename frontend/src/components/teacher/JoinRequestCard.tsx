@@ -12,21 +12,22 @@ import type {
   JoinRequest,
   ManualVerificationReason,
 } from '../../types/teacher';
+import type { ClassroomJoinRequest } from '../../service/api/joinRequests';
 
 import {
   VerificationStatusBadge,
 } from './VerificationStatusBadge';
 
-type JoinRequestCardProps = {
-  request: JoinRequest;
+type JoinRequestCardProps<T extends JoinRequest | ClassroomJoinRequest> = {
+  request: T;
   onApprove: (requestId: string) => void;
   onReject: (requestId: string) => void;
 
-  onManualVerify: (
-    request: JoinRequest,
-  ) => void;
+  onManualVerify?: (request: T) => void;
 
   showActions?: boolean;
+  showManualVerify?: boolean;
+  actionsDisabled?: boolean;
 };
 
 function getInitials(name: string) {
@@ -38,16 +39,22 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-export function JoinRequestCard({
+function formatRequestedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('vi-VN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+export function JoinRequestCard<T extends JoinRequest | ClassroomJoinRequest>({
   request,
   onApprove,
   onReject,
   onManualVerify,
   showActions = true,
-}: JoinRequestCardProps) {
+  showManualVerify = true,
+  actionsDisabled = false,
+}: JoinRequestCardProps<T>) {
   const canApprove =
-    request.verificationStatus === 'matched';
-    request.verificationStatus === 'manual_verified'
+    request.verificationStatus === 'matched' || request.verificationStatus === 'manual_verified';
 
   const manualReasonLabels: Record<
     ManualVerificationReason,
@@ -121,7 +128,7 @@ export function JoinRequestCard({
               <p className="flex items-center gap-2">
                 <Clock3 className="size-4 text-muted" />
 
-                <span>{request.requestedAt}</span>
+                <span>{formatRequestedAt(request.requestedAt)}</span>
               </p>
             </div>
           </div>
@@ -131,6 +138,7 @@ export function JoinRequestCard({
           <div className="flex shrink-0 flex-wrap items-center gap-3 xl:justify-end">
           <button
             type="button"
+            disabled={actionsDisabled}
             onClick={() => onReject(request.id)}
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-red-200 bg-white px-4 text-xs font-bold text-red-600 transition hover:bg-red-50"
           >
@@ -141,7 +149,7 @@ export function JoinRequestCard({
           <div className="group relative">
             <button
               type="button"
-              disabled={!canApprove}
+              disabled={!canApprove || actionsDisabled}
               onClick={() => onApprove(request.id)}
               className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-full px-4 text-xs font-bold transition ${
                 canApprove
@@ -153,7 +161,7 @@ export function JoinRequestCard({
               Duyệt
             </button>
 
-            {!canApprove && (
+            {!canApprove && showManualVerify && onManualVerify && (
               <button
                 type="button"
                 onClick={() =>

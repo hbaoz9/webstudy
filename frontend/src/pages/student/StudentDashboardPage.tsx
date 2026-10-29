@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, BookOpen, GraduationCap, PlayCircle, Clock3, CircleCheckBig } from "lucide-react";
 import { useStudentAccount } from "../../contexts/StudentAccountContext";
 import { RegistrationNotice } from "../../components/common/RegistrationNotice";
 import { useTeacherAssignments } from "../../contexts/TeacherAssignmentsContext";
-import { useStudentClassMemberships } from "../../hooks/useStudentClassMemberships";
+import { useAuth } from "../../contexts/AuthContext";
+import { getStudentActiveMemberships, getStudentJoinRequests, type ClassroomJoinRequest, type ClassroomMembership } from "../../service/api/joinRequests";
 import { geo10Lessons } from "../../data/geo10Curriculum";
 import { LESSON_CONTENT_KEY, loadLessonContents } from "../../utils/lessonContentStorage";
 import { assignmentAnswerDraftKey, hasAssignmentDraftAnswers, loadAssignmentAnswerDraft } from "../../utils/assignmentQuestion";
@@ -25,10 +26,39 @@ function formatTimeRemaining(milliseconds: number) {
 
 export default function StudentDashboardPage() {
   const { student, hasStudentProfile } = useStudentAccount();
-  const { memberships } = useStudentClassMemberships();
+  const { session } = useAuth();
+  const [classroomData, setClassroomData] = useState<{ memberships: ClassroomMembership[]; requests: ClassroomJoinRequest[] } | null>(null);
+  const [classroomError, setClassroomError] = useState("");
+  const [classroomLoading, setClassroomLoading] = useState(true);
+  const classroomGeneration = useRef(0);
   const { assignments, submissions, submissionStorageStatus } = useTeacherAssignments();
   const [now, setNow] = useState(() => Date.now());
   const [storageRevision, setStorageRevision] = useState(0);
+
+  const loadClassroomData = useCallback(async () => {
+    const generation = ++classroomGeneration.current;
+    setClassroomLoading(true);
+    setClassroomError("");
+    try {
+      const memberships = await getStudentActiveMemberships();
+      // Join history explains an empty classroom state; active classes do not depend on it.
+      const requests = memberships.length === 0 ? await getStudentJoinRequests() : [];
+      if (generation !== classroomGeneration.current) return;
+      setClassroomData({ memberships, requests });
+    } catch (cause) {
+      if (generation === classroomGeneration.current) {
+        setClassroomData(null);
+        setClassroomError(cause instanceof Error ? cause.message : "Không thể tải thông tin lớp học.");
+      }
+    } finally {
+      if (generation === classroomGeneration.current) setClassroomLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadClassroomData();
+    return () => { ++classroomGeneration.current; };
+  }, [loadClassroomData]);
 
   // Timer renders reuse these reads. Returning to the tab refreshes local data.
   const lessonContents = useMemo(loadLessonContents, [storageRevision]);
@@ -71,15 +101,10 @@ export default function StudentDashboardPage() {
       window.removeEventListener("storage", refreshChangedStorage);
     };
   }, [student.id]);
-  const activeMemberships = memberships.filter(({ classroom, status }) =>
-    status === "joined" && classroom.status !== "archived",
-  );
-  const archivedMemberships = memberships.filter(({ classroom, status }) =>
-    status === "joined" && classroom.status === "archived",
-  );
-  const pendingMemberships = memberships.filter(({ classroom, status }) =>
-    classroom.status !== "archived" && (status === "pending" || status === "needs_link"),
-  );
+  const activeMemberships = classroomData?.memberships.filter(({ status }) => status === "active") ?? [];
+  const latestRequest = classroomData?.requests[0];
+  const pendingRequest = latestRequest?.status === "pending";
+  const approvedWithoutMembership = activeMemberships.length === 0 && latestRequest?.status === "approved";
   const activeClassIds = new Set(activeMemberships.map(({ classroom }) => classroom.id));
   const visibleAssignments = assignments.filter((assignment) =>
     hasStudentProfile && assignment.status === "published" && activeClassIds.has(assignment.classroomId),
@@ -117,27 +142,34 @@ export default function StudentDashboardPage() {
   const visibleVideos = videos.filter((video) =>
     video.status === "published" && videoClassIds(video).some((id) => activeClassIds.has(id)),
   );
+  // Learning panels still use prototype storage and cannot represent Laravel classroom progress.
+  const learningIntegrationAvailable = false;
 
   return (
     <div className="mx-auto min-w-0 max-w-6xl space-y-7 [overflow-wrap:anywhere]">
       <RegistrationNotice role="student" />
       <header className="rounded-3xl bg-ink p-6 text-white shadow-card sm:p-8">
         <p className="text-sm font-semibold text-emerald">WebStudy · Địa lí 10</p>
-        <h1 className="mt-3 text-2xl font-extrabold sm:text-3xl">{hasStudentProfile ? `Chào ${student.name} 👋` : "Chào bạn 👋"}</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-300">Theo dõi việc cần làm và nội dung học tập của bạn.</p>
-        {activeMemberships.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+        <h1 className="mt-3 text-2xl font-extrabold sm:text-3xl">{session?.name ? `Chào ${session.name} 👋` : "Chào bạn 👋"}</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-300">Theo dõi lớp học của bạn.</p>
+        {!classroomLoading && !classroomError && activeMemberships.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
           {activeMemberships.map(({ classroom }) => <Link key={classroom.id} to={`/student/classes/${classroom.id}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 px-4 hover:bg-white/10"><GraduationCap className="size-4 shrink-0" />{classroom.name}<ArrowRight className="size-4 shrink-0" /></Link>)}
         </div>}
       </header>
 
-      {activeMemberships.length === 0 ? <section className="rounded-2xl border border-dashed border-line bg-white p-6">
-        <h2 className="text-xl font-extrabold text-ink">{!hasStudentProfile ? "Bắt đầu học cùng lớp" : pendingMemberships.length > 0 ? "Đang chờ tham gia lớp" : archivedMemberships.length > 0 ? "Hiện không có lớp đang hoạt động" : "Bạn chưa tham gia lớp học nào"}</h2>
-        <p className="mt-2 text-sm leading-6 text-secondary">{pendingMemberships.length > 0 ? "Yêu cầu của bạn đang chờ giáo viên duyệt hoặc liên kết với danh sách lớp. Xem trạng thái trong lớp học của tôi." : archivedMemberships.length > 0 ? "Lớp của bạn đã được lưu trữ. Bạn có thể xem lại thông tin trong danh sách lớp học." : "Có mã lớp từ giáo viên? Hãy nhập mã để tham gia. Bạn vẫn có thể khám phá học liệu công khai khi chưa vào lớp."}</p>
+      {classroomLoading ? <section role="status" className="rounded-2xl border border-line bg-white p-6 text-sm text-secondary">Đang tải lớp học của bạn…</section>
+      : classroomError ? <section role="alert" className="rounded-2xl border border-line bg-white p-6">
+        <h2 className="text-xl font-extrabold text-ink">Không thể tải lớp học</h2>
+        <p className="mt-2 text-sm text-red-600">{classroomError}</p>
+        <button type="button" onClick={() => void loadClassroomData()} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-emerald px-5 text-sm font-bold text-white">Thử lại</button>
+      </section>
+      : activeMemberships.length === 0 ? <section className="rounded-2xl border border-dashed border-line bg-white p-6">
+        <h2 className="text-xl font-extrabold text-ink">{pendingRequest ? "Đang chờ tham gia lớp" : "Bạn chưa tham gia lớp học nào"}</h2>
+        <p className="mt-2 text-sm leading-6 text-secondary">{pendingRequest ? "Yêu cầu tham gia đang chờ giáo viên xử lý. Xem trạng thái trong lịch sử yêu cầu." : approvedWithoutMembership ? "Yêu cầu trước đây đã được duyệt, nhưng hiện bạn không có lớp đang tham gia. Xem lịch sử yêu cầu để biết thêm chi tiết." : "Có mã lớp từ giáo viên? Hãy nhập mã để tham gia."}</p>
         <div className="mt-4 flex flex-wrap gap-3">
-          <Link to={pendingMemberships.length > 0 || archivedMemberships.length > 0 ? "/student/classes" : "/student/join-class"} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald px-5 text-sm font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald">{pendingMemberships.length > 0 || archivedMemberships.length > 0 ? "Xem lớp học của tôi" : "Nhập mã lớp"}<ArrowRight className="size-4" /></Link>
-          <Link to="/student/lessons" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line px-5 text-sm font-bold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald">Khám phá bài học</Link>
+          <Link to="/student/join-class" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald px-5 text-sm font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald">{pendingRequest || approvedWithoutMembership ? "Xem lịch sử yêu cầu" : "Nhập mã lớp"}<ArrowRight className="size-4" /></Link>
         </div>
-      </section> : <>
+      </section> : learningIntegrationAvailable ? <>
         <section aria-labelledby="student-todo-heading" className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div><h2 id="student-todo-heading" className="text-xl font-extrabold text-ink">Việc cần làm</h2><p className="mt-1 text-sm text-secondary">Bài chưa nộp, ưu tiên hạn gần nhất.</p></div>
@@ -169,7 +201,13 @@ export default function StudentDashboardPage() {
           {recentLessons.length === 0 ? <p className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Chưa có bài học được đăng.</p> : <div className="grid gap-3 md:grid-cols-3">{recentLessons.map((lesson) => <Link key={lesson.id} to={`/student/lessons?lesson=${lesson.id}`} className="min-w-0 rounded-2xl border border-line bg-white p-5 hover:bg-slate-50"><BookOpen className="size-5 text-emerald" /><h3 className="mt-3 font-bold text-ink">Bài {lesson.number}: {lesson.title}</h3><p className="mt-2 text-sm font-bold text-emerald">Mở bài học →</p></Link>)}</div>}
         </section>
         <Link to="/student/videos" className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-5 hover:bg-slate-50"><PlayCircle className="size-6 shrink-0 text-emerald" /><div className="min-w-0"><p className="font-bold text-ink">Video tương tác</p><p className="mt-1 text-sm text-secondary">{visibleVideos.length > 0 ? `${visibleVideos.length} video đang khả dụng trong lớp đang học` : "Chưa có video được giao trong lớp đang học"}</p></div><ArrowRight className="ml-auto size-5 shrink-0 text-emerald" /></Link>
-      </>}
+      </> : <section className="rounded-2xl border border-line bg-white p-6 shadow-card">
+        <div className="flex items-start gap-3"><BookOpen className="mt-1 size-6 shrink-0 text-emerald" /><div>
+          <h2 className="text-xl font-extrabold text-ink">Lớp học của bạn</h2>
+          <p className="mt-2 text-sm leading-6 text-secondary">Bạn đang tham gia {activeMemberships.length} lớp. Nội dung học tập và tiến độ chưa được đồng bộ với lớp học này.</p>
+          <Link to="/student/classes" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-emerald">Xem lớp học của tôi <ArrowRight className="size-4" /></Link>
+        </div></div>
+      </section>}
     </div>
   );
 }

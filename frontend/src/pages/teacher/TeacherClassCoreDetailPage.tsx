@@ -5,11 +5,13 @@ import { ApiError } from "../../service/api/client";
 import { archiveTeacherClassroom, getTeacherClassroom, updateTeacherClassroom, type CreateClassroomInput, type TeacherClassroom } from "../../service/api/classrooms";
 import { ClassSettingsModal } from "../../components/teacher/ClassSettingsModal";
 import { TeacherRosterReadSection } from "../../components/teacher/TeacherRosterReadSection";
+import { TeacherJoinRequestsSection } from "../../components/teacher/TeacherJoinRequestsSection";
 import { TeacherStatCard } from "../../components/teacher/TeacherStatCard";
 
 export default function TeacherClassCoreDetailPage() {
   const { classId } = useParams();
   const [classroom, setClassroom] = useState<TeacherClassroom | null>(null);
+  const [rosterRevision, setRosterRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
@@ -118,7 +120,8 @@ export default function TeacherClassCoreDetailPage() {
       </section>
       {notice && <p role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">{notice}</p>}
 
-      <TeacherRosterReadSection key={classroom.id} classroomId={classroom.id} classroomName={classroom.name} archived={classroom.status === "archived"} />
+      <TeacherRosterReadSection key={classroom.id} classroomId={classroom.id} classroomName={classroom.name} archived={classroom.status === "archived"} refreshToken={rosterRevision} />
+      <TeacherJoinRequestsSection key={`requests-${classroom.id}`} classroomId={classroom.id} archived={classroom.status === "archived"} onMembershipChange={async () => setClassroom(await getTeacherClassroom(classroom.id))} onRosterChange={() => setRosterRevision((value) => value + 1)} />
       {editing && classroom.status === "active" && <ClassSettingsModal backendClassroom={classroom} onClose={() => setEditing(false)} onSave={save} onArchive={archive} />}
     </>}
   </div>;

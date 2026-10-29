@@ -17,7 +17,7 @@ const statusClasses: Record<string, string> = {
   conflict: "bg-red-50 text-red-600",
 };
 
-export function TeacherRosterReadSection({ classroomId, classroomName, archived }: { classroomId: string; classroomName: string; archived: boolean }) {
+export function TeacherRosterReadSection({ classroomId, classroomName, archived, refreshToken = 0 }: { classroomId: string; classroomName: string; archived: boolean; refreshToken?: number }) {
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [rosterSearch, setRosterSearch] = useState("");
@@ -27,7 +27,7 @@ export function TeacherRosterReadSection({ classroomId, classroomName, archived 
   const [result, setResult] = useState<{ key: string; roster?: TeacherRosterPage; error?: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importNotice, setImportNotice] = useState("");
-  const queryKey = JSON.stringify([classroomId, page, debouncedSearch, statusFilter, revision]);
+  const queryKey = JSON.stringify([classroomId, page, debouncedSearch, statusFilter, revision, refreshToken]);
   const searchPending = rosterSearch.trim() !== debouncedSearch;
   const currentResult = !searchPending && result?.key === queryKey ? result : null;
   const loading = currentResult === null;
@@ -66,7 +66,7 @@ export function TeacherRosterReadSection({ classroomId, classroomName, archived 
         setResult({ key: queryKey, error: message });
       });
     return () => { active = false; };
-  }, [classroomId, archived, page, revision, debouncedSearch, statusFilter, queryKey, hasFilters]);
+  }, [classroomId, archived, page, revision, debouncedSearch, statusFilter, queryKey, hasFilters, refreshToken]);
 
   return <section aria-labelledby="roster-title" className="rounded-2xl border border-line bg-white p-5 shadow-card sm:p-6">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">

@@ -8,6 +8,9 @@ import TeacherClassCoreDetailPage from "./TeacherClassCoreDetailPage";
 vi.mock("../../components/teacher/TeacherRosterReadSection", () => ({
   TeacherRosterReadSection: ({ archived }: { archived: boolean }) => <div data-roster-status={archived ? "archived" : "active"} />,
 }));
+vi.mock("../../components/teacher/TeacherJoinRequestsSection", () => ({
+  TeacherJoinRequestsSection: () => <div data-testid="teacher-join-requests" />,
+}));
 
 const classroom = {
   id: "class-uuid", name: "10A1 - Kiểm thử", code: "ABC234", academicYear: "2026-2027",
