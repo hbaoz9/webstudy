@@ -87,6 +87,66 @@ class ClassroomService
         }, 3);
     }
 
+    public function restore(User $teacher, Classroom $classroom): Classroom
+    {
+        return DB::transaction(function () use ($teacher, $classroom): Classroom {
+            $owned = $this->ownedClassroom($teacher, $classroom, true);
+            if ($owned->status !== 'archived') {
+                throw ValidationException::withMessages(['classroom' => 'This classroom is not archived.']);
+            }
+
+            $owned->forceFill(['status' => 'active'])->save();
+
+            return $owned->refresh();
+        }, 3);
+    }
+
+    public function deleteArchived(User $teacher, Classroom $classroom): void
+    {
+        DB::transaction(function () use ($teacher, $classroom): void {
+            $owned = $this->ownedClassroom($teacher, $classroom, true);
+            if ($owned->status !== 'archived') {
+                throw ValidationException::withMessages(['classroom' => 'Only archived classrooms can be deleted.']);
+            }
+            if ($owned->memberships()->where('status', 'active')->exists()
+                || $owned->joinRequests()->where('status', 'pending')->exists()) {
+                throw ValidationException::withMessages(['classroom' => 'This classroom still has active memberships or pending join requests.']);
+            }
+
+            $owned->delete();
+        }, 3);
+    }
+
+    public function regenerateCode(User $teacher, Classroom $classroom): Classroom
+    {
+        for ($attempt = 0; $attempt < 8; $attempt++) {
+            try {
+                $updated = DB::transaction(function () use ($teacher, $classroom): ?Classroom {
+                    $owned = $this->ownedClassroom($teacher, $classroom, true);
+                    $this->ensureActive($owned);
+                    $code = $this->generateCode();
+                    if (strcasecmp($code, $owned->code) === 0
+                        || Classroom::withTrashed()->whereRaw('lower(code) = ?', [mb_strtolower($code)])->exists()) {
+                        return null;
+                    }
+
+                    $owned->forceFill(['code' => $code])->save();
+
+                    return $owned->refresh();
+                }, 3);
+                if ($updated !== null) {
+                    return $updated;
+                }
+            } catch (QueryException $exception) {
+                if (! $this->isClassCodeCollision($exception)) {
+                    throw $exception;
+                }
+            }
+        }
+
+        throw ValidationException::withMessages(['code' => 'Could not generate a unique new class code.']);
+    }
+
     /**
      * Upserts validated spreadsheet rows by normalized student code. Existing links and
      * historical roster entries are retained when a later import omits a row.
@@ -231,7 +291,7 @@ class ClassroomService
 
     private function ensureUniqueName(int $teacherId, string $name, string $year, ?string $exceptId = null): void
     {
-        $query = Classroom::query()->where('teacher_id', $teacherId)->where('academic_year', $year);
+        $query = Classroom::withTrashed()->where('teacher_id', $teacherId)->where('academic_year', $year);
 
         if ($exceptId !== null) {
             $query->where('id', '!=', $exceptId);

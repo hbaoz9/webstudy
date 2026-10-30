@@ -64,6 +64,58 @@ class ClassroomServiceTest extends TestCase
         }
     }
 
+    public function test_regenerate_code_retries_old_and_deleted_class_codes_with_a_bound(): void
+    {
+        $teacher = $this->teacher();
+        $fixedCodeService = new class extends ClassroomService
+        {
+            public string $nextCode = 'ABC234';
+
+            protected function generateCode(): string
+            {
+                return $this->nextCode;
+            }
+        };
+        $deleted = $fixedCodeService->create($teacher, ['name' => 'Old class', 'academic_year' => '2026-2027']);
+        $fixedCodeService->nextCode = 'DEF567';
+        $target = $fixedCodeService->create($teacher, ['name' => 'Current class', 'academic_year' => '2026-2027']);
+        $fixedCodeService->archive($teacher, $deleted);
+        $fixedCodeService->deleteArchived($teacher, $deleted);
+
+        $retryService = new class extends ClassroomService
+        {
+            public int $calls = 0;
+
+            protected function generateCode(): string
+            {
+                return ['DEF567', 'ABC234', 'GHJ567'][$this->calls++];
+            }
+        };
+        $updated = $retryService->regenerateCode($teacher, $target);
+        $this->assertSame('GHJ567', $updated->code);
+        $this->assertSame(3, $retryService->calls);
+        $this->assertSame('ABC234', \App\Models\Classroom::withTrashed()->findOrFail($deleted->id)->code);
+
+        $exhausted = new class extends ClassroomService
+        {
+            public int $calls = 0;
+
+            protected function generateCode(): string
+            {
+                $this->calls++;
+                return 'ABC234';
+            }
+        };
+        try {
+            $exhausted->regenerateCode($teacher, $target);
+            $this->fail('Regeneration accepted a code reserved by a deleted classroom.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('code', $exception->errors());
+        }
+        $this->assertSame(8, $exhausted->calls);
+        $this->assertSame('GHJ567', $target->fresh()->code);
+    }
+
     public function test_roster_import_normalizes_codes_and_rolls_back_duplicate_rows(): void
     {
         $teacher = $this->teacher();

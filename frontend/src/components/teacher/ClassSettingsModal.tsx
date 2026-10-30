@@ -49,6 +49,7 @@ interface BackendClassSettingsModalProps {
   onClose: () => void;
   onSave: (input: CreateClassroomInput) => Promise<void>;
   onArchive: () => Promise<void>;
+  onRegenerateCode: () => Promise<void>;
 }
 
 export function ClassSettingsModal(props: PrototypeClassSettingsModalProps | BackendClassSettingsModalProps) {
@@ -553,7 +554,7 @@ function PrototypeClassSettingsModal({
   );
 }
 
-function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchive }: BackendClassSettingsModalProps) {
+function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchive, onRegenerateCode }: BackendClassSettingsModalProps) {
   const [name, setName] = useState(backendClassroom.name);
   const [academicYear, setAcademicYear] = useState(backendClassroom.academicYear);
   const [description, setDescription] = useState(backendClassroom.description ?? '');
@@ -564,6 +565,9 @@ function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchiv
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [archiveError, setArchiveError] = useState('');
   const [archiving, setArchiving] = useState(false);
+  const [confirmCode, setConfirmCode] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
   const submitLock = useRef(false);
   const academicYearOptions = Array.from(new Set([backendClassroom.academicYear, ...getAcademicYearOptions()]));
 
@@ -582,7 +586,7 @@ function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchiv
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (confirmArchive || submitLock.current) return;
+    if (confirmArchive || confirmCode || submitLock.current) return;
     setFieldErrors({});
     setFormError('');
     const trimmedName = name.trim();
@@ -624,7 +628,7 @@ function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchiv
   };
 
   const archive = async () => {
-    if (!confirmArchive || submitLock.current || backendClassroom.status !== 'active') return;
+    if (!confirmArchive || confirmCode || submitLock.current || backendClassroom.status !== 'active') return;
     submitLock.current = true;
     setArchiving(true);
     setArchiveError('');
@@ -638,7 +642,22 @@ function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchiv
     }
   };
 
-  const busy = saving || archiving;
+  const regenerate = async () => {
+    if (!confirmCode || confirmArchive || submitLock.current || backendClassroom.status !== 'active') return;
+    submitLock.current = true;
+    setRegenerating(true);
+    setCodeError('');
+    try {
+      await onRegenerateCode();
+    } catch (cause) {
+      setCodeError(cause instanceof Error ? cause.message : 'Không thể đổi mã lớp. Vui lòng thử lại.');
+    } finally {
+      submitLock.current = false;
+      setRegenerating(false);
+    }
+  };
+
+  const busy = saving || archiving || regenerating;
 
   return <div role="dialog" aria-modal="true" aria-labelledby="class-settings-title"
     onClick={() => { if (!submitLock.current) onClose(); }}
@@ -695,18 +714,34 @@ function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchiv
         </div>
         {formError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{formError}</p>}
         {backendClassroom.status === 'active' && <div className="border-t border-line pt-5">
+          <h3 className="font-extrabold text-ink">Mã lớp</h3>
+          <p className="mt-2 text-sm leading-6 text-secondary">Mã hiện tại: <strong>{backendClassroom.code}</strong>. Đổi mã sẽ khiến mã cũ ngừng dùng được để tra lớp hoặc gửi yêu cầu mới. Thành viên và yêu cầu đang chờ được giữ nguyên.</p>
+          {!confirmCode ? <button type="button" disabled={busy || confirmArchive} onClick={() => { setConfirmCode(true); setCodeError(''); }}
+            className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-bold text-ink transition hover:bg-slate-50 disabled:opacity-50">
+            <RefreshCw className="size-4" aria-hidden="true" />Đổi mã lớp
+          </button> : <div role="group" aria-label="Xác nhận đổi mã lớp" className="mt-4 rounded-xl border border-line bg-slate-50 p-4">
+            <p className="font-bold text-ink">Xác nhận đổi mã của {backendClassroom.name}?</p>
+            <p className="mt-1 text-sm text-secondary">Mã cũ sẽ ngừng hoạt động ngay sau khi Backend xác nhận. Thay đổi thông tin chưa lưu sẽ không được áp dụng.</p>
+            {codeError && <p role="alert" className="mt-3 text-sm text-red-700">{codeError}</p>}
+            <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row">
+              <button type="button" disabled={busy} onClick={() => { setConfirmCode(false); setCodeError(''); }} className="min-h-11 rounded-full border border-line bg-white px-5 text-sm font-bold text-ink disabled:opacity-50">Hủy đổi mã</button>
+              <button type="button" disabled={busy} onClick={() => void regenerate()} className="min-h-11 rounded-full bg-emerald px-5 text-sm font-bold text-white disabled:opacity-50">{regenerating ? 'Đang đổi mã…' : 'Xác nhận đổi mã'}</button>
+            </div>
+          </div>}
+        </div>}
+        {backendClassroom.status === 'active' && <div className="border-t border-line pt-5">
           <div className="flex items-center gap-2">
             <AlertTriangle className="size-5 text-amber-600" aria-hidden="true" />
             <h3 className="font-extrabold text-ink">Quản lý trạng thái lớp</h3>
           </div>
-          <p className="mt-2 text-sm leading-6 text-secondary">Khi lưu trữ, học sinh đang tham gia sẽ rời lớp và yêu cầu tham gia đang chờ sẽ bị từ chối. Lịch sử lớp và thành viên vẫn được giữ lại. Hiện chưa thể khôi phục lớp qua API.</p>
-          {!confirmArchive ? <button type="button" disabled={busy}
+          <p className="mt-2 text-sm leading-6 text-secondary">Khi lưu trữ, học sinh đang tham gia sẽ rời lớp và yêu cầu tham gia đang chờ sẽ bị từ chối. Lịch sử lớp và thành viên vẫn được giữ lại. Bạn có thể khôi phục lớp sau đó, nhưng học sinh sẽ không tự tham gia lại.</p>
+          {!confirmArchive ? <button type="button" disabled={busy || confirmCode}
             onClick={() => { setConfirmArchive(true); setArchiveError(''); }}
             className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 text-sm font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50">
             <Archive className="size-4" aria-hidden="true" />Lưu trữ lớp
           </button> : <div role="group" aria-label="Xác nhận lưu trữ lớp" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
             <p className="font-bold text-amber-900">Xác nhận lưu trữ {backendClassroom.name}?</p>
-            <p className="mt-1 text-sm leading-6 text-amber-800">Thao tác này không thể hoàn tác trên giao diện hiện tại. Thay đổi thông tin chưa lưu sẽ không được áp dụng.</p>
+            <p className="mt-1 text-sm leading-6 text-amber-800">Có thể khôi phục lớp sau khi lưu trữ, nhưng membership đã rời và yêu cầu đã bị từ chối sẽ không tự được phục hồi. Thay đổi thông tin chưa lưu sẽ không được áp dụng.</p>
             {archiveError && <p role="alert" className="mt-3 text-sm text-red-700">{archiveError}</p>}
             <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row">
               <button type="button" disabled={busy} onClick={() => { setConfirmArchive(false); setArchiveError(''); }}
@@ -720,7 +755,7 @@ function BackendClassSettingsModal({ backendClassroom, onClose, onSave, onArchiv
       <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t border-line bg-white p-5 sm:flex-row sm:justify-end sm:p-6">
         <button type="button" onClick={onClose} disabled={busy}
           className="min-h-11 rounded-full border border-line px-6 text-sm font-bold text-ink transition hover:bg-slate-50 disabled:opacity-50">Hủy</button>
-        <button type="submit" disabled={busy || confirmArchive}
+        <button type="submit" disabled={busy || confirmArchive || confirmCode}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald px-6 text-sm font-bold text-white transition hover:bg-emerald/90 disabled:cursor-not-allowed disabled:opacity-50">
           <Save className="size-4" aria-hidden="true" />{saving ? 'Đang lưu…' : 'Lưu thay đổi'}
         </button>

@@ -97,6 +97,219 @@ class ClassroomApiTest extends TestCase
         $this->assertDatabaseCount('class_memberships', 1);
     }
 
+    public function test_restore_reopens_class_without_reactivating_membership_or_request_history(): void
+    {
+        $classroom = $this->createClassroom();
+        $teacher = $classroom->teacher->user;
+        $roster = $classroom->rosterEntries()->create([
+            'order_number' => 1, 'full_name' => 'Student Example', 'student_code' => 'HS2002',
+        ]);
+        $student = User::factory()->create()->refresh();
+        $this->actingAs($student)->postJson('/api/student/join-requests', [
+            'class_code' => $classroom->code, 'student_code' => 'HS2099', 'declared_class' => $classroom->name,
+        ])->assertCreated();
+        $approvedRequest = $student->classJoinRequests()->firstOrFail();
+        $this->actingAs($teacher)->postJson("/api/teacher/classrooms/{$classroom->id}/join-requests/{$approvedRequest->id}/manual-verify", [
+            'roster_entry_id' => $roster->id, 'reason' => 'wrong_student_code', 'note' => 'Checked school ID.',
+        ])->assertCreated();
+        $membership = $student->classMemberships()->firstOrFail();
+
+        $pendingStudent = User::factory()->create()->refresh();
+        $this->actingAs($pendingStudent)->postJson('/api/student/join-requests', [
+            'class_code' => $classroom->code, 'student_code' => 'HS3001', 'declared_class' => $classroom->name,
+        ])->assertCreated();
+        $pendingRequest = $pendingStudent->classJoinRequests()->firstOrFail();
+
+        $this->actingAs($teacher)->postJson("/api/teacher/classrooms/{$classroom->id}/archive")
+            ->assertOk()->assertJsonPath('data.status', 'archived')->assertJsonPath('data.studentCount', 0);
+        $this->actingAs($pendingStudent)->getJson('/api/student/classrooms/lookup/'.$classroom->code)->assertNotFound();
+
+        $this->actingAs($teacher)->postJson("/api/teacher/classrooms/{$classroom->id}/restore")
+            ->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.studentCount', 0)
+            ->assertJsonPath('data.id', $classroom->id)->assertJsonPath('data.code', $classroom->code);
+        $this->assertDatabaseHas('class_memberships', ['id' => $membership->id, 'status' => 'left']);
+        $this->assertDatabaseHas('class_roster_entries', ['id' => $roster->id, 'student_code' => 'HS2002', 'status' => 'not_joined', 'linked_user_id' => null]);
+        $this->assertDatabaseHas('class_join_requests', [
+            'id' => $approvedRequest->id, 'status' => 'approved', 'verification_status' => 'manual_verified',
+            'original_student_code' => 'HS2099', 'manual_roster_entry_id' => $roster->id,
+        ]);
+        $this->assertDatabaseHas('class_join_requests', ['id' => $pendingRequest->id, 'status' => 'rejected']);
+        $this->assertDatabaseCount('class_memberships', 1);
+        $this->assertDatabaseCount('class_join_requests', 2);
+        $this->actingAs($pendingStudent)->getJson('/api/student/classrooms/lookup/'.$classroom->code)->assertOk();
+        $this->postJson('/api/student/join-requests', [
+            'class_code' => $classroom->code, 'student_code' => 'HS3001', 'declared_class' => $classroom->name,
+        ])->assertCreated()->assertJsonPath('data.status', 'pending');
+        $this->actingAs($teacher)->postJson("/api/teacher/classrooms/{$classroom->id}/restore")
+            ->assertUnprocessable()->assertJsonValidationErrors('classroom');
+        $this->assertDatabaseCount('class_memberships', 1);
+    }
+
+    public function test_restore_requires_verified_owner_and_archived_classroom(): void
+    {
+        $this->postJson('/api/teacher/classrooms/00000000-0000-4000-8000-000000000000/restore')->assertUnauthorized();
+        $classroom = $this->createClassroom();
+        $url = "/api/teacher/classrooms/{$classroom->id}/restore";
+        $this->postJson($url)->assertUnprocessable()->assertJsonValidationErrors('classroom');
+        $this->actingAs($classroom->teacher->user)->postJson("/api/teacher/classrooms/00000000-0000-4000-8000-000000000000/restore")
+            ->assertNotFound();
+        $this->postJson("/api/teacher/classrooms/{$classroom->id}/archive")->assertOk();
+        $otherTeacher = $this->teacher();
+        $this->actingAs($otherTeacher)->postJson($url)->assertForbidden();
+        $this->verify($otherTeacher);
+        $this->postJson($url)->assertForbidden();
+        $student = User::factory()->create()->refresh();
+        $this->actingAs($student)->postJson($url)->assertForbidden();
+        $this->assertSame('archived', $classroom->fresh()->status);
+    }
+
+    public function test_soft_delete_preserves_history_and_hides_all_classroom_routes(): void
+    {
+        $classroom = $this->createClassroom();
+        $teacher = $classroom->teacher->user;
+        $roster = $classroom->rosterEntries()->create([
+            'order_number' => 1, 'full_name' => 'Student Example', 'student_code' => 'HS2002',
+        ]);
+        $student = User::factory()->create()->refresh();
+        $this->actingAs($student)->postJson('/api/student/join-requests', [
+            'class_code' => $classroom->code, 'student_code' => 'HS2099', 'declared_class' => $classroom->name,
+        ])->assertCreated();
+        $joinRequest = $student->classJoinRequests()->firstOrFail();
+        $this->actingAs($teacher)->postJson("/api/teacher/classrooms/{$classroom->id}/join-requests/{$joinRequest->id}/manual-verify", [
+            'roster_entry_id' => $roster->id, 'reason' => 'wrong_student_code', 'note' => 'Checked school ID.',
+        ])->assertCreated();
+        $membership = $student->classMemberships()->firstOrFail();
+        $url = "/api/teacher/classrooms/{$classroom->id}";
+        $this->deleteJson($url)->assertUnprocessable()->assertJsonValidationErrors('classroom');
+        $this->postJson($url.'/archive')->assertOk();
+        $this->deleteJson($url)->assertNoContent();
+
+        $deleted = Classroom::withTrashed()->findOrFail($classroom->id);
+        $this->assertNotNull($deleted->deleted_at);
+        $this->assertSame($classroom->id, $deleted->id);
+        $this->assertSame($classroom->code, $deleted->code);
+        $this->assertDatabaseHas('class_roster_entries', ['id' => $roster->id, 'classroom_id' => $classroom->id]);
+        $this->assertDatabaseHas('class_join_requests', ['id' => $joinRequest->id, 'status' => 'approved', 'manual_roster_entry_id' => $roster->id]);
+        $this->assertDatabaseHas('class_memberships', ['id' => $membership->id, 'status' => 'left']);
+        $this->assertDatabaseCount('class_roster_entries', 1);
+        $this->assertDatabaseCount('class_join_requests', 1);
+        $this->assertDatabaseCount('class_memberships', 1);
+
+        $this->getJson('/api/teacher/classrooms')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson($url)->assertNotFound();
+        $this->putJson($url, ['name' => 'Changed', 'academic_year' => '2026-2027'])->assertNotFound();
+        $this->postJson($url.'/archive')->assertNotFound();
+        $this->postJson($url.'/restore')->assertNotFound();
+        $this->postJson($url.'/regenerate-code')->assertNotFound();
+        $this->deleteJson($url)->assertNotFound();
+        $this->getJson($url.'/roster')->assertNotFound();
+        $this->getJson($url.'/join-requests')->assertNotFound();
+        $this->getJson($url.'/memberships')->assertNotFound();
+        $this->postJson($url."/join-requests/{$joinRequest->id}/approve")->assertNotFound();
+        $this->actingAs($student)->getJson('/api/student/classrooms/lookup/'.$classroom->code)->assertNotFound();
+        $this->getJson('/api/student/classrooms/'.$classroom->id)->assertNotFound();
+        $this->getJson('/api/student/classrooms')->assertOk()->assertJsonCount(0, 'data');
+        $this->postJson('/api/student/join-requests', [
+            'class_code' => $classroom->code, 'student_code' => 'HS2002', 'declared_class' => $classroom->name,
+        ])->assertNotFound();
+        $this->getJson('/api/student/join-requests')->assertOk()->assertJsonCount(1, 'data');
+    }
+
+    public function test_soft_delete_requires_verified_owner_and_consistent_archived_state(): void
+    {
+        $this->deleteJson('/api/teacher/classrooms/00000000-0000-4000-8000-000000000000')->assertUnauthorized();
+        $classroom = $this->createClassroom();
+        $url = "/api/teacher/classrooms/{$classroom->id}";
+        $this->deleteJson($url)->assertUnprocessable();
+        $otherTeacher = $this->teacher();
+        $this->actingAs($otherTeacher)->deleteJson($url)->assertForbidden();
+        $this->verify($otherTeacher);
+        $this->deleteJson($url)->assertForbidden();
+        $this->actingAs(User::factory()->create()->refresh())->deleteJson($url)->assertForbidden();
+
+        $teacher = $classroom->teacher->user;
+        $roster = $classroom->rosterEntries()->create(['order_number' => 1, 'full_name' => 'Student', 'student_code' => 'HS1']);
+        $student = User::factory()->create()->refresh();
+        $this->actingAs($student)->postJson('/api/student/join-requests', [
+            'class_code' => $classroom->code, 'student_code' => 'HS1', 'declared_class' => $classroom->name,
+        ])->assertCreated();
+        $joinRequest = $student->classJoinRequests()->firstOrFail();
+        $this->actingAs($teacher)->postJson($url."/join-requests/{$joinRequest->id}/manual-verify", [
+            'roster_entry_id' => $roster->id, 'reason' => 'account_name_difference', 'note' => 'Checked school ID.',
+        ])->assertCreated();
+        $membership = $student->classMemberships()->firstOrFail();
+        $this->postJson($url.'/archive')->assertOk();
+
+// Tải lại membership sau khi Archive cập nhật database.
+$membership->refresh();
+$this->assertSame('left', $membership->status);
+
+// Cố ý tạo trạng thái dữ liệu bất nhất để kiểm tra Soft Delete.
+$membership->forceFill([
+    'status' => 'active',
+    'left_at' => null,
+])->save();
+
+// Bảo đảm trạng thái active thực sự đã được lưu vào database.
+$this->assertSame('active', $membership->fresh()->status);
+
+// Backend phải từ chối xóa lớp archived còn active membership.
+$this->deleteJson($url)
+    ->assertUnprocessable()
+    ->assertJsonValidationErrors('classroom');
+        $this->assertNull($classroom->fresh()->deleted_at);
+    }
+
+    public function test_regenerate_code_preserves_memberships_roster_and_pending_requests(): void
+    {
+        $this->postJson('/api/teacher/classrooms/00000000-0000-4000-8000-000000000000/regenerate-code')->assertUnauthorized();
+        $classroom = $this->createClassroom();
+        $teacher = $classroom->teacher->user;
+        $oldCode = $classroom->code;
+        $url = "/api/teacher/classrooms/{$classroom->id}/regenerate-code";
+        $otherTeacher = $this->teacher();
+        $this->actingAs($otherTeacher)->postJson($url)->assertForbidden();
+        $this->verify($otherTeacher);
+        $this->postJson($url)->assertForbidden();
+        $this->actingAs(User::factory()->create()->refresh())->postJson($url)->assertForbidden();
+        $roster = $classroom->rosterEntries()->create(['order_number' => 1, 'full_name' => 'Student', 'student_code' => 'HS1']);
+        $student = User::factory()->create()->refresh();
+        $this->actingAs($student)->postJson('/api/student/join-requests', [
+            'class_code' => $oldCode, 'student_code' => 'HS1', 'declared_class' => $classroom->name,
+        ])->assertCreated();
+        $approved = $student->classJoinRequests()->firstOrFail();
+        $this->actingAs($teacher)->postJson("/api/teacher/classrooms/{$classroom->id}/join-requests/{$approved->id}/manual-verify", [
+            'roster_entry_id' => $roster->id, 'reason' => 'account_name_difference', 'note' => 'Checked school ID.',
+        ])->assertCreated();
+        $membership = $student->classMemberships()->firstOrFail();
+        $pendingStudent = User::factory()->create()->refresh();
+        $this->actingAs($pendingStudent)->postJson('/api/student/join-requests', [
+            'class_code' => $oldCode, 'student_code' => 'HS2', 'declared_class' => $classroom->name,
+        ])->assertCreated();
+        $pending = $pendingStudent->classJoinRequests()->firstOrFail();
+        $this->actingAs($teacher);
+        $newCode = $this->postJson($url)->assertOk()->assertJsonPath('data.id', $classroom->id)->json('data.code');
+        $this->assertNotSame($oldCode, $newCode);
+        $this->assertMatchesRegularExpression('/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/', $newCode);
+        $this->assertDatabaseHas('class_roster_entries', ['id' => $roster->id, 'linked_user_id' => $student->id]);
+        $this->assertDatabaseHas('class_memberships', ['id' => $membership->id, 'status' => 'active']);
+        $this->assertDatabaseHas('class_join_requests', ['id' => $pending->id, 'status' => 'pending']);
+        $this->assertDatabaseCount('class_memberships', 1);
+        $this->actingAs($pendingStudent)->getJson('/api/student/classrooms/lookup/'.$oldCode)->assertNotFound();
+        $this->getJson('/api/student/classrooms/lookup/'.$newCode)->assertOk();
+        $this->postJson('/api/student/join-requests', [
+            'class_code' => $oldCode, 'student_code' => 'HS3', 'declared_class' => $classroom->name,
+        ])->assertNotFound();
+        $newStudent = User::factory()->create()->refresh();
+        $this->actingAs($newStudent)->postJson('/api/student/join-requests', [
+            'class_code' => $newCode, 'student_code' => 'HS3', 'declared_class' => $classroom->name,
+        ])->assertCreated();
+        $this->actingAs($teacher)->postJson("/api/teacher/classrooms/{$classroom->id}/archive")->assertOk();
+        $this->postJson($url)->assertUnprocessable()->assertJsonValidationErrors('classroom');
+        $this->deleteJson("/api/teacher/classrooms/{$classroom->id}")->assertNoContent();
+        $this->postJson($url)->assertNotFound();
+    }
+
     public function test_roster_read_is_scoped_to_classroom_and_paginated(): void
     {
         $first = $this->createClassroom();

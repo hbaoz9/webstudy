@@ -59,6 +59,28 @@ class TeacherClassroomController extends Controller
         return new ClassroomResource($this->withActiveCount($service->archive($request->user(), $classroom)));
     }
 
+    public function restore(Request $request, Classroom $classroom, ClassroomService $service): ClassroomResource
+    {
+        Gate::authorize('manage', $classroom);
+
+        return new ClassroomResource($this->withActiveCount($service->restore($request->user(), $classroom)));
+    }
+
+    public function destroy(Request $request, Classroom $classroom, ClassroomService $service): \Illuminate\Http\Response
+    {
+        Gate::authorize('manage', $classroom);
+        $service->deleteArchived($request->user(), $classroom);
+
+        return response()->noContent();
+    }
+
+    public function regenerateCode(Request $request, Classroom $classroom, ClassroomService $service): ClassroomResource
+    {
+        Gate::authorize('manage', $classroom);
+
+        return new ClassroomResource($this->withActiveCount($service->regenerateCode($request->user(), $classroom)));
+    }
+
     public function roster(Request $request, Classroom $classroom): AnonymousResourceCollection
     {
         Gate::authorize('manage', $classroom);

@@ -23,6 +23,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::put('{classroom}', [TeacherClassroomController::class, 'update']);
         Route::patch('{classroom}', [TeacherClassroomController::class, 'update']);
         Route::post('{classroom}/archive', [TeacherClassroomController::class, 'archive']);
+        Route::post('{classroom}/restore', [TeacherClassroomController::class, 'restore']);
+        Route::delete('{classroom}', [TeacherClassroomController::class, 'destroy']);
+        Route::post('{classroom}/regenerate-code', [TeacherClassroomController::class, 'regenerateCode']);
         Route::get('{classroom}/roster', [TeacherClassroomController::class, 'roster']);
         Route::post('{classroom}/roster/import', [TeacherClassroomController::class, 'importRoster']);
         Route::get('{classroom}/join-requests', [TeacherClassroomController::class, 'joinRequests']);

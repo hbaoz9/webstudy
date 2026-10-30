@@ -95,3 +95,17 @@ export async function archiveTeacherClassroom(id: string): Promise<TeacherClassr
   const response = await apiRequest<{ data: TeacherClassroom }>(`/teacher/classrooms/${encodeURIComponent(id)}/archive`, "POST");
   return response.data;
 }
+
+export async function restoreTeacherClassroom(id: string): Promise<TeacherClassroom> {
+  const response = await apiRequest<{ data: TeacherClassroom }>(`/teacher/classrooms/${encodeURIComponent(id)}/restore`, "POST");
+  return response.data;
+}
+
+export async function deleteTeacherClassroom(id: string): Promise<void> {
+  await apiRequest<null>(`/teacher/classrooms/${encodeURIComponent(id)}`, "DELETE");
+}
+
+export async function regenerateTeacherClassroomCode(id: string): Promise<TeacherClassroom> {
+  const response = await apiRequest<{ data: TeacherClassroom }>(`/teacher/classrooms/${encodeURIComponent(id)}/regenerate-code`, "POST");
+  return response.data;
+}

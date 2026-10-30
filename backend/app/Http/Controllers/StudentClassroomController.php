@@ -19,7 +19,7 @@ class StudentClassroomController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         return ClassMembershipResource::collection($request->user()->classMemberships()
-            ->where('status', 'active')->with('classroom')->latest()->paginate(20));
+            ->where('status', 'active')->whereHas('classroom')->with('classroom')->latest()->paginate(20));
     }
 
     public function show(Classroom $classroom): ClassroomResource
@@ -55,6 +55,7 @@ class StudentClassroomController extends Controller
     public function leave(Request $request, ClassMembership $membership, ClassMembershipService $service): ClassMembershipResource
     {
         abort_unless((int) $membership->student_id === (int) $request->user()->id, 403);
+        abort_if($membership->classroom === null, 404);
 
         return new ClassMembershipResource($service->leave($request->user(), $membership));
     }

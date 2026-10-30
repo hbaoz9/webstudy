@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { archiveTeacherClassroom, createTeacherClassroom, getTeacherClassroom, getTeacherClassroomRoster, importTeacherClassroomRoster, listTeacherClassrooms, updateTeacherClassroom } from "./classrooms";
+import { archiveTeacherClassroom, createTeacherClassroom, deleteTeacherClassroom, getTeacherClassroom, getTeacherClassroomRoster, importTeacherClassroomRoster, listTeacherClassrooms, regenerateTeacherClassroomCode, updateTeacherClassroom } from "./classrooms";
 
 const classroom = { id: "class-uuid", name: "10A1", code: "ABC234", academicYear: "2026-2027", description: null,
   coverImage: null, status: "active", createdAt: "2026-10-28T00:00:00Z", studentCount: 0 };
@@ -60,6 +60,24 @@ describe("Teacher Classroom API contract", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(input);
     expect(fetchMock.mock.calls[3][0]).toBe("/api/teacher/classrooms/class-uuid/archive");
     expect(fetchMock.mock.calls[3][1].method).toBe("POST");
+  });
+
+  it("uses the classroom ID for soft delete and regenerate-code without a request body", async () => {
+    const changed = { ...classroom, code: "NEW567" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({ data: changed }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(regenerateTeacherClassroomCode(classroom.id)).resolves.toEqual(changed);
+    await expect(deleteTeacherClassroom(classroom.id)).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/teacher/classrooms/class-uuid/regenerate-code");
+    expect(fetchMock.mock.calls[1][1].method).toBe("POST");
+    expect(fetchMock.mock.calls[1][1].body).toBeUndefined();
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/teacher/classrooms/class-uuid");
+    expect(fetchMock.mock.calls[3][1].method).toBe("DELETE");
+    expect(fetchMock.mock.calls[3][1].body).toBeUndefined();
   });
 
   it("reads only the requested classroom roster page and preserves backend fields", async () => {
