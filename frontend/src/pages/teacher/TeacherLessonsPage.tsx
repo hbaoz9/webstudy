@@ -1,19 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useSearchParams } from "react-router-dom";
 
-import {
-  geo10Chapters,
-  geo10Lessons,
-  geo10Parts,
-  getLessonsByChapter,
-} from "../../data/geo10Curriculum";
-
-import type { CurriculumLesson, LessonContent } from "../../types/curriculum";
-
-import {
-  loadLessonContents,
-  saveLessonContents,
-} from "../../utils/lessonContentStorage";
+import type { CurriculumChapter, CurriculumLesson, CurriculumPart, LessonContent } from "../../types/curriculum";
+import { listTeacherClassrooms, type TeacherClassroom } from "../../service/api/classrooms";
+import { getTeacherLessons, saveTeacherLessonDraft, publishTeacherLesson, withdrawTeacherLesson, type TeacherLessonRecord } from "../../service/api/lessons";
 
 import { buildLessonSavePayload, validateLessonContent } from "../../utils/lessonForm";
 
@@ -42,23 +32,55 @@ function blankContent(lessonId: string): LessonContent {
 
 export default function TeacherLessonsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [contents, setContents] = useState(loadLessonContents);
+  const [contents, setContents] = useState<Record<string, LessonContent>>({});
+  const [records, setRecords] = useState<Record<string, TeacherLessonRecord>>({});
+  const [catalog, setCatalog] = useState<TeacherLessonRecord[]>([]);
+  const [classrooms, setClassrooms] = useState<TeacherClassroom[]>([]);
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [reload, setReload] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const lessonGeneration = useRef(0);
+  const legacyContentOnDevice = (() => {
+    try { return Boolean(localStorage.getItem("webstudy-v1-geo10-lesson-content") || localStorage.getItem("webstudy-geo10-lesson-content-v1")); }
+    catch { return false; }
+  })();
 
-  const LAST_LESSON_KEY = "webstudy-v1-last-teacher-lesson";
+  useEffect(() => {
+    let current = true;
+    setLoading(true); setLoadError("");
+    Promise.all([getTeacherLessons(), listTeacherClassrooms()]).then(([rows, classes]) => {
+      if (!current) return;
+      const nextRecords = Object.fromEntries(rows.map(row => [row.id, row]));
+      setRecords(nextRecords);
+      setCatalog(rows);
+      setContents(Object.fromEntries(rows.flatMap(row => {
+        const value = row.publishedContent
+          ? { ...row.publishedContent, draft: row.draftContent ?? undefined }
+          : row.draftContent;
+        return value ? [[row.id, value]] : [];
+      })));
+      setClassrooms(classes);
+      setLoading(false);
+    }).catch(cause => {
+      if (!current) return;
+      setLoadError(cause instanceof Error ? cause.message : "Không thể tải bài học.");
+      setLoading(false);
+    });
+    return () => { current = false; };
+  }, [reload]);
+
+  const geo10Lessons: CurriculumLesson[] = catalog.map(({ id, chapterId, number, title }) => ({ id, chapterId, number, title }));
+  const geo10Chapters: CurriculumChapter[] = [...new Map(catalog.map(({ chapterId, partId, chapterNumber, chapterTitle }) => [chapterId, { id: chapterId, partId, number: chapterNumber, title: chapterTitle }])).values()];
+  const geo10Parts: CurriculumPart[] = [...new Map(catalog.map(({ partId, partNumber, partTitle }) => [partId, { id: partId, number: partNumber, title: partTitle }])).values()];
+  const getLessonsByChapter = (id: string) => geo10Lessons.filter(item => item.chapterId === id);
 
   const requestedId = searchParams.get("lesson");
   const validRequestedId = geo10Lessons.some((item) => item.id === requestedId)
     ? requestedId
     : null;
-
-  const savedLastId = (() => {
-    try {
-      const id = localStorage.getItem(LAST_LESSON_KEY);
-      return geo10Lessons.some((item) => item.id === id) ? id : null;
-    } catch {
-      return null;
-    }
-  })();
 
   const firstDraftId = geo10Lessons.find(
     (item) =>
@@ -69,18 +91,10 @@ export default function TeacherLessonsPage() {
   const firstEmptyId = geo10Lessons.find((item) => !contents[item.id])?.id;
 
   const lessonId =
-    validRequestedId ?? savedLastId ?? firstDraftId ?? firstEmptyId ?? "";
+    validRequestedId ?? firstDraftId ?? firstEmptyId ?? geo10Lessons[0]?.id ?? "";
 
   const lesson = geo10Lessons.find((item) => item.id === lessonId);
   const chapter = geo10Chapters.find((item) => item.id === lesson?.chapterId);
-
-  useEffect(() => {
-    if (!lesson) return;
-
-    try {
-      localStorage.setItem(LAST_LESSON_KEY, lesson.id);
-    } catch {}
-  }, [lesson?.id]);
 
   const [openPart, setOpenPart] = useState(
     () =>
@@ -122,13 +136,6 @@ export default function TeacherLessonsPage() {
   }, [blocker.state]);
 
   const actionDialogRef = useRef<HTMLDialogElement>(null);
-  const [undo, setUndo] = useState<{
-    lessonId: string;
-    previous?: LessonContent;
-    edited: LessonContent;
-    wasDirty: boolean;
-    published: string;
-  } | null>(null);
   const pickerDialogRef = useRef<HTMLDialogElement>(null);
   const previewDialogRef = useRef<HTMLDialogElement>(null);
   const storedContent = lesson ? contents[lesson.id] : undefined;
@@ -136,6 +143,9 @@ export default function TeacherLessonsPage() {
   const content = lesson
     ? (storedContent?.draft ?? storedContent ?? blankContent(lesson.id))
     : undefined;
+  const previousClassIds = lesson ? (records[lesson.id]?.classroomIds ?? []) : [];
+  const addedClassrooms = classrooms.filter(item => selectedClassIds.includes(item.id) && !previousClassIds.includes(item.id));
+  const removedClassrooms = classrooms.filter(item => previousClassIds.includes(item.id) && !selectedClassIds.includes(item.id));
 
   useLayoutEffect(() => {
     const dialog = pickerDialogRef.current;
@@ -173,12 +183,6 @@ export default function TeacherLessonsPage() {
       document.body.style.overflow = previousOverflow;
     };
   }, [modalOpen]);
-
-  useEffect(() => {
-    if (!undo) return;
-    const timer = window.setTimeout(() => setUndo(null), 10000);
-    return () => window.clearTimeout(timer);
-  }, [undo]);
 
   useEffect(() => {
     setPreviewOpen(false);
@@ -263,6 +267,7 @@ export default function TeacherLessonsPage() {
 
   function updateLesson(changes: Partial<LessonContent>) {
     if (!lesson) return;
+    lessonGeneration.current += 1;
     setContents((current) => {
       const saved = current[lesson.id];
       const edited = {
@@ -277,13 +282,13 @@ export default function TeacherLessonsPage() {
           saved?.status === "published" ? { ...saved, draft: edited } : edited,
       };
     });
-    setUndo(null);
     setDirty(true);
     setMessage("");
     setError("");
   }
 
   function chooseLesson(id: string): boolean {
+    if (submittingRef.current) return false;
     if (id !== lessonId && dirty) {
       setError("");
       setAction({ kind: "switch", lessonId: id });
@@ -293,7 +298,7 @@ export default function TeacherLessonsPage() {
   }
 
   function navigateLesson(id: string): boolean {
-    setUndo(null);
+    lessonGeneration.current += 1;
     const next = geo10Lessons.find((item) => item.id === id);
     const nextChapter = geo10Chapters.find(
       (item) => item.id === next?.chapterId,
@@ -307,44 +312,56 @@ export default function TeacherLessonsPage() {
     return true;
   }
 
-  function save(status: "draft" | "published", withdraw = false): boolean {
-    if (!lesson || !content) return false;
+  function acceptRecord(row: TeacherLessonRecord) {
+    setRecords(current => ({ ...current, [row.id]: row }));
+    const value = row.publishedContent
+      ? { ...row.publishedContent, draft: row.draftContent ?? undefined }
+      : row.draftContent;
+    setContents(current => {
+      if (value) return { ...current, [row.id]: value };
+      const next = { ...current };
+      delete next[row.id];
+      return next;
+    });
+  }
+
+  async function save(status: "draft" | "published", withdraw = false): Promise<boolean> {
+    if (!lesson || !content || submittingRef.current) return false;
     setError("");
     setMessage("");
 
-    const validationError = validateLessonContent(content, status);
+    const validationError = withdraw ? null : validateLessonContent(content, status);
     if (validationError) {
       setError(validationError);
       return false;
     }
     const savedContent: LessonContent = buildLessonSavePayload(
       content,
-      status,
+      "draft",
       new Date().toISOString(),
     );
-    const next = {
-      ...contents,
-      [lesson.id]:
-        status === "draft" && isPublished && storedContent && !withdraw
-          ? { ...storedContent, draft: savedContent }
-          : savedContent,
-    };
+    const generation = lessonGeneration.current;
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
-      const previous = loadLessonContents()[lesson.id];
-      saveLessonContents(next);
-      setUndo(
-        status === "published"
-          ? {
-              lessonId: lesson.id,
-              previous,
-              edited: storedContent ?? content,
-              wasDirty: dirty,
-              published: JSON.stringify(savedContent),
-            }
-          : null,
-      );
-      setContents(next);
-      setDirty(false);
+      let row: TeacherLessonRecord;
+      if (withdraw) {
+        if (dirty) await saveTeacherLessonDraft(lesson.id, savedContent);
+        row = await withdrawTeacherLesson(lesson.id);
+      } else {
+        if (dirty || !records[lesson.id]?.draftContent) {
+          row = await saveTeacherLessonDraft(lesson.id, savedContent);
+        } else {
+          row = records[lesson.id];
+        }
+        if (status === "published") row = await publishTeacherLesson(lesson.id, selectedClassIds);
+      }
+      if (generation === lessonGeneration.current) {
+        acceptRecord(row);
+        setDirty(false);
+      } else {
+        setRecords(current => ({ ...current, [row.id]: row }));
+      }
       setError("");
       setMessage(
         withdraw
@@ -353,48 +370,23 @@ export default function TeacherLessonsPage() {
             ? "Đã đăng bài học."
             : "",
       );
-      return true;
-    } catch {
-      setError(
-        "Không đủ chỗ lưu nội dung/ảnh trong trình duyệt. Hãy dùng ảnh nhỏ hơn.",
-      );
+      return generation === lessonGeneration.current;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Không thể lưu bài học. Hãy thử lại.");
       return false;
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   }
 
-  function undoPublication() {
-    if (!undo) return;
-    try {
-      const current = loadLessonContents();
-      if (JSON.stringify(current[undo.lessonId]) !== undo.published) {
-        setUndo(null);
-        setError(
-          "Bài đã thay đổi ở nơi khác. Không thể hoàn tác bản đăng này.",
-        );
-        return;
-      }
-      if (undo.previous) current[undo.lessonId] = undo.previous;
-      else delete current[undo.lessonId];
-      saveLessonContents(current);
-      setContents({ ...current, [undo.lessonId]: undo.edited });
-      setDirty(undo.wasDirty);
-      setUndo(null);
-      setError("");
-      setMessage("Đã hoàn tác đăng bài. Nội dung vừa soạn được giữ lại.");
-    } catch {
-      setError(
-        "Không thể lưu hoàn tác. Bản đang đăng chưa thay đổi; hãy thử lại.",
-      );
-    }
-  }
-
-  function confirmAction() {
+  async function confirmAction() {
     if (!action) return;
 
     if (action.kind === "blocked") {
       if (blocker.state !== "blocked") return;
 
-      if (!save("draft")) return;
+      if (!await save("draft")) return;
 
       setAction(null);
       blocker.proceed();
@@ -402,10 +394,10 @@ export default function TeacherLessonsPage() {
     }
 
     if (action.kind === "switch") {
-      if (!save("draft")) return;
+      if (!await save("draft")) return;
       navigateLesson(action.lessonId);
     } else if (
-      !save(
+      !await save(
         action.kind === "publish" ? "published" : "draft",
         action.kind === "withdraw",
       )
@@ -579,6 +571,7 @@ export default function TeacherLessonsPage() {
   );
 
   function closeActionDialog() {
+    if (submittingRef.current) return;
     if (action?.kind === "blocked" && blocker.state === "blocked") {
       blocker.reset();
     }
@@ -586,8 +579,13 @@ export default function TeacherLessonsPage() {
     setAction(null);
   }
 
+  if (loading) return <p role="status" className="p-5 text-sm text-secondary">Đang tải bài học từ máy chủ…</p>;
+  if (loadError) return <div role="alert" className="rounded-2xl border border-line bg-white p-5"><p>{loadError}</p><button type="button" onClick={() => setReload(value => value + 1)} className="mt-3 rounded-full bg-emerald px-4 py-2 text-white">Thử lại</button></div>;
+  if (catalog.length === 0) return <div className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary"><p>Chưa có bài học trong danh mục trên máy chủ.</p><button type="button" onClick={() => setReload(value => value + 1)} className="mt-3 rounded-full border border-line px-4 py-2 font-bold text-ink">Tải lại</button></div>;
+
   return (
     <div className="min-w-0 space-y-5 pb-40">
+      {legacyContentOnDevice && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Thiết bị này có bài soạn cũ chưa chuyển lên hệ thống. Nội dung cũ vẫn được giữ trên thiết bị và không tự gắn với tài khoản hiện tại.</p>}
       <header>
         <h1 className="text-2xl font-extrabold text-ink">Nội dung bài học</h1>
         <p className="mt-1 text-sm text-secondary">
@@ -702,15 +700,6 @@ export default function TeacherLessonsPage() {
               {message && (
                 <p role="status" className="mt-1 text-sm text-secondary">
                   {message}
-                  {undo && (
-                    <button
-                      type="button"
-                      onClick={undoPublication}
-                      className="ml-2 min-h-11 rounded-lg px-2 font-bold text-emerald-800 underline"
-                    >
-                      Hoàn tác
-                    </button>
-                  )}
                 </p>
               )}
               {isPublished && (dirty || storedContent?.draft) && (
@@ -730,8 +719,8 @@ export default function TeacherLessonsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => save("draft")}
-                disabled={!dirty && Boolean(storedContent)}
+                onClick={() => { void save("draft"); }}
+                disabled={submitting || (!dirty && Boolean(storedContent))}
                 className="min-h-11 rounded-full border border-line px-4 text-sm font-bold text-ink disabled:opacity-50"
               >
                 <span className="sm:hidden">Lưu</span>
@@ -744,9 +733,10 @@ export default function TeacherLessonsPage() {
                 }
                 onClick={() => {
                   setError("");
+                  setSelectedClassIds(records[lesson.id]?.classroomIds ?? []);
                   setAction({ kind: "publish" });
                 }}
-                disabled={isPublished && !dirty && !storedContent?.draft}
+                disabled={submitting}
                 className="min-h-11 rounded-full bg-emerald px-4 text-sm font-bold text-white disabled:opacity-50"
               >
                 <span className="sm:hidden">
@@ -843,15 +833,25 @@ export default function TeacherLessonsPage() {
               ) : (
                 <>
                   <p>
-                    Nội dung sẽ hiển thị cho học sinh truy cập bài này trong
-                    chương trình Địa lí 10. Nội dung hiện dùng chung, chưa phân
-                    phối riêng theo lớp.
+                    Bản đăng dành cho các lớp bạn chọn bên dưới.
                   </p>
                   <p>Nội dung bài học đã sẵn sàng cập nhật.</p>
-                  <p>Có thể Hoàn tác trong 10 giây sau khi đăng.</p>
                 </>
               )}
             </div>
+            {action.kind === "publish" && <fieldset className="mt-4 space-y-2 rounded-xl border border-line p-3">
+              <legend className="px-1 text-sm font-bold">Lớp được xem bài học</legend>
+              {classrooms.filter(item => item.status === "active").map(item => <label key={item.id} className="flex min-h-11 items-center gap-2 text-sm">
+                <input type="checkbox" checked={selectedClassIds.includes(item.id)} disabled={submitting} onChange={() => setSelectedClassIds(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])} />
+                {item.name} · {item.academicYear}
+              </label>)}
+              {!classrooms.some(item => item.status === "active") && <p className="text-sm text-secondary">Cần có ít nhất một lớp đang hoạt động để đăng bài.</p>}
+              {isPublished && <div className="space-y-1 text-xs text-secondary">
+                <p>Danh sách mới sẽ thay thế các lớp đang được xem.</p>
+                {addedClassrooms.length > 0 && <p>Thêm: {addedClassrooms.map(item => item.name).join(", ")}</p>}
+                {removedClassrooms.length > 0 && <p>Gỡ quyền xem: {removedClassrooms.map(item => item.name).join(", ")}</p>}
+              </div>}
+            </fieldset>}
             {error && (
               <p role="alert" className="mt-3 text-sm text-red-600">
                 {error}
@@ -862,6 +862,7 @@ export default function TeacherLessonsPage() {
                 type="button"
                 autoFocus
                 onClick={closeActionDialog}
+                disabled={submitting}
                 className="min-h-11 rounded-full border border-line px-4 text-sm font-bold"
               >
                 {action.kind === "switch" || action.kind === "blocked"
@@ -872,7 +873,10 @@ export default function TeacherLessonsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setContents(loadLessonContents());
+                    setContents(Object.fromEntries(Object.values(records).flatMap(row => {
+                      const value = row.publishedContent ? { ...row.publishedContent, draft: row.draftContent ?? undefined } : row.draftContent;
+                      return value ? [[row.id, value]] : [];
+                    })));
                     setDirty(false);
 
                     if (action.kind === "blocked") {
@@ -892,7 +896,8 @@ export default function TeacherLessonsPage() {
               )}
               <button
                 type="button"
-                onClick={confirmAction}
+                onClick={() => { void confirmAction(); }}
+                disabled={submitting || (action.kind === "publish" && selectedClassIds.length === 0)}
                 className={`min-h-11 rounded-full px-4 text-sm font-bold text-white ${action.kind === "withdraw" ? "bg-red-600" : "bg-emerald"}`}
               >
                 {action.kind === "switch" || action.kind === "blocked"
