@@ -6,8 +6,7 @@ import { RegistrationNotice } from "../../components/common/RegistrationNotice";
 import { useTeacherAssignments } from "../../contexts/TeacherAssignmentsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { getStudentActiveMemberships, getStudentJoinRequests, type ClassroomJoinRequest, type ClassroomMembership } from "../../service/api/joinRequests";
-import { geo10Lessons } from "../../data/geo10Curriculum";
-import { LESSON_CONTENT_KEY, loadLessonContents } from "../../utils/lessonContentStorage";
+import { getStudentLessons, type StudentLessonSummary } from "../../service/api/lessons";
 import { assignmentAnswerDraftKey, hasAssignmentDraftAnswers, loadAssignmentAnswerDraft } from "../../utils/assignmentQuestion";
 
 import { TEACHER_VIDEOS_KEY as VIDEOS_KEY, loadTeacherVideos as loadVideos, videoClassIds, TEACHER_VIDEOS_CHANGED } from "../../utils/teacherVideoStorage";
@@ -26,7 +25,7 @@ function formatTimeRemaining(milliseconds: number) {
 
 export default function StudentDashboardPage() {
   const { student, hasStudentProfile } = useStudentAccount();
-  const { session } = useAuth();
+  const { session, status: authStatus } = useAuth();
   const [classroomData, setClassroomData] = useState<{ memberships: ClassroomMembership[]; requests: ClassroomJoinRequest[] } | null>(null);
   const [classroomError, setClassroomError] = useState("");
   const [classroomLoading, setClassroomLoading] = useState(true);
@@ -34,6 +33,21 @@ export default function StudentDashboardPage() {
   const { assignments, submissions, submissionStorageStatus } = useTeacherAssignments();
   const [now, setNow] = useState(() => Date.now());
   const [storageRevision, setStorageRevision] = useState(0);
+  const [lessonRevision, setLessonRevision] = useState(0);
+  const [lessonResult, setLessonResult] = useState<{
+    key: string; data?: StudentLessonSummary[]; error?: string;
+  } | null>(null);
+  const lessonKey = `${authStatus}:${session?.role ?? "none"}:${session?.userId ?? "none"}:${lessonRevision}`;
+  const currentLessons = lessonResult?.key === lessonKey ? lessonResult : null;
+
+  useEffect(() => {
+    if (authStatus !== "ready" || session?.role !== "student") return;
+    let active = true;
+    void getStudentLessons()
+      .then((data) => { if (active) setLessonResult({ key: lessonKey, data }); })
+      .catch(() => { if (active) setLessonResult({ key: lessonKey, error: "Không thể tải bài học mới cập nhật. Vui lòng thử lại." }); });
+    return () => { active = false; };
+  }, [authStatus, lessonKey, session?.role]);
 
   const loadClassroomData = useCallback(async () => {
     const generation = ++classroomGeneration.current;
@@ -61,7 +75,6 @@ export default function StudentDashboardPage() {
   }, [loadClassroomData]);
 
   // Timer renders reuse these reads. Returning to the tab refreshes local data.
-  const lessonContents = useMemo(loadLessonContents, [storageRevision]);
   const videos = useMemo(loadVideos, [storageRevision]);
   const startedAssignments = useMemo(() => {
     if (!hasStudentProfile) return {};
@@ -84,8 +97,7 @@ export default function StudentDashboardPage() {
       if (document.visibilityState === "visible") refreshLocalData();
     };
     const refreshChangedStorage = (event: StorageEvent) => {
-      if (event.key === null || event.key === LESSON_CONTENT_KEY ||
-          event.key === "webstudy-geo10-lesson-content-v1" || event.key === VIDEOS_KEY ||
+      if (event.key === null || event.key === VIDEOS_KEY ||
           event.key.startsWith(assignmentAnswerDraftKey("", student.id))) {
         refreshLocalData();
       }
@@ -132,13 +144,12 @@ export default function StudentDashboardPage() {
     return () => window.clearInterval(timer);
   }, [hasUpcomingDeadline]);
 
-  const recentLessons = geo10Lessons
-    .filter((lesson) => lessonContents[lesson.id]?.status === "published")
-    .sort((a, b) => {
-      const first = Date.parse(lessonContents[a.id].updatedAt);
-      const second = Date.parse(lessonContents[b.id].updatedAt);
-      return (Number.isFinite(second) ? second : 0) - (Number.isFinite(first) ? first : 0) || a.number - b.number;
-    }).slice(0, 3);
+  const recentLessons = (currentLessons?.data ?? []).slice().sort((a, b) => {
+    const first = Date.parse(a.publishedAt ?? "");
+    const second = Date.parse(b.publishedAt ?? "");
+    return (Number.isFinite(second) ? second : -Infinity) - (Number.isFinite(first) ? first : -Infinity)
+      || a.number - b.number || a.id.localeCompare(b.id);
+  }).slice(0, 3);
   const visibleVideos = videos.filter((video) =>
     video.status === "published" && videoClassIds(video).some((id) => activeClassIds.has(id)),
   );
@@ -196,10 +207,6 @@ export default function StudentDashboardPage() {
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm"><span className="text-secondary">{pendingRows.length} bài cần làm</span><span className={expiredCount > 0 ? "text-red-600" : "text-secondary"}>{expiredCount} bài hết hạn chưa nộp</span>{unavailableCount > 0 && <span className="text-secondary">{unavailableCount} bài chưa khả dụng</span>}</div>
           {submissionStorageStatus !== "saved" && <p role="status" className="mt-3 text-sm text-red-600">{submissionStorageStatus === "error" ? "Bài nộp chưa lưu được trên trình duyệt. Mở bài đã nộp để thử lưu lại trước khi đóng trang." : "Đang lưu bài nộp…"}</p>}
         </section>
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-extrabold text-ink">Bài học mới cập nhật</h2><Link to="/student/lessons" className="inline-flex min-h-11 items-center text-sm font-bold text-emerald">Xem tất cả bài học →</Link></div>
-          {recentLessons.length === 0 ? <p className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Chưa có bài học được đăng.</p> : <div className="grid gap-3 md:grid-cols-3">{recentLessons.map((lesson) => <Link key={lesson.id} to={`/student/lessons?lesson=${lesson.id}`} className="min-w-0 rounded-2xl border border-line bg-white p-5 hover:bg-slate-50"><BookOpen className="size-5 text-emerald" /><h3 className="mt-3 font-bold text-ink">Bài {lesson.number}: {lesson.title}</h3><p className="mt-2 text-sm font-bold text-emerald">Mở bài học →</p></Link>)}</div>}
-        </section>
         <Link to="/student/videos" className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-5 hover:bg-slate-50"><PlayCircle className="size-6 shrink-0 text-emerald" /><div className="min-w-0"><p className="font-bold text-ink">Video tương tác</p><p className="mt-1 text-sm text-secondary">{visibleVideos.length > 0 ? `${visibleVideos.length} video đang khả dụng trong lớp đang học` : "Chưa có video được giao trong lớp đang học"}</p></div><ArrowRight className="ml-auto size-5 shrink-0 text-emerald" /></Link>
       </> : <section className="rounded-2xl border border-line bg-white p-6 shadow-card">
         <div className="flex items-start gap-3"><BookOpen className="mt-1 size-6 shrink-0 text-emerald" /><div>
@@ -208,6 +215,26 @@ export default function StudentDashboardPage() {
           <Link to="/student/classes" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-emerald">Xem lớp học của tôi <ArrowRight className="size-4" /></Link>
         </div></div>
       </section>}
+      <section className="space-y-3" aria-labelledby="student-recent-lessons-heading">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="student-recent-lessons-heading" className="text-xl font-extrabold text-ink">Bài học mới cập nhật</h2>
+          <Link to="/student/lessons" className="inline-flex min-h-11 items-center text-sm font-bold text-emerald">Xem tất cả bài học →</Link>
+        </div>
+        {!currentLessons ? (
+          <p role="status" className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Đang tải bài học mới cập nhật...</p>
+        ) : currentLessons.error ? (
+          <div role="alert" className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">
+            <p>{currentLessons.error}</p>
+            <button type="button" onClick={() => setLessonRevision((value) => value + 1)} className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-emerald px-4 text-sm font-bold text-emerald">Thử lại bài học</button>
+          </div>
+        ) : recentLessons.length === 0 ? (
+          <p className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Chưa có bài học được đăng cho lớp của bạn.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-3">
+            {recentLessons.map((lesson) => <Link key={lesson.id} to={`/student/lessons?lesson=${encodeURIComponent(lesson.id)}`} className="min-w-0 rounded-2xl border border-line bg-white p-5 hover:bg-slate-50"><BookOpen className="size-5 text-emerald" /><h3 className="mt-3 font-bold text-ink">Bài {lesson.number}: {lesson.title}</h3><p className="mt-2 text-sm font-bold text-emerald">Mở bài học →</p></Link>)}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

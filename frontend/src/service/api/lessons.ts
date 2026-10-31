@@ -18,7 +18,28 @@ export type TeacherLessonRecord = {
   classroomIds: string[];
 };
 
+export type StudentLessonSummary = Pick<
+  TeacherLessonRecord,
+  "id" | "chapterId" | "chapterNumber" | "chapterTitle" |
+  "partId" | "partNumber" | "partTitle" | "number" | "title" | "publishedAt"
+>;
+
+export type PublishedLessonContent = Omit<LessonContent, "status" | "draft"> & { status: "published" };
+
+export type StudentLessonDetail = StudentLessonSummary & {
+  content: PublishedLessonContent;
+};
+
 const path = (id: string) => `/teacher/lessons/${encodeURIComponent(id)}`;
+const studentPath = (id: string) => `/student/lessons/${encodeURIComponent(id)}`;
+
+export async function getStudentLessons(): Promise<StudentLessonSummary[]> {
+  return (await apiGet<{ data: StudentLessonSummary[] }>("/student/lessons")).data;
+}
+
+export async function getStudentLesson(id: string): Promise<StudentLessonDetail> {
+  return (await apiGet<{ data: StudentLessonDetail }>(studentPath(id))).data;
+}
 
 export async function getTeacherLessons(): Promise<TeacherLessonRecord[]> {
   return (await apiGet<{ data: TeacherLessonRecord[] }>("/teacher/lessons")).data;
