@@ -28,11 +28,12 @@ class ClassroomMatch
             return 'manual_verified';
         }
 
-        if (self::className($request->declared_class) !== self::className($classroom->name)) {
+        if ($request->declared_class !== null
+            && self::className($request->declared_class) !== self::className($classroom->name)) {
             return 'mismatch';
         }
 
-        if ($roster === null) {
+        if ($request->student_code === null || $roster === null) {
             return 'unverified';
         }
 

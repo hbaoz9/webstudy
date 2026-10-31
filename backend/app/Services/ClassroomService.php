@@ -314,7 +314,7 @@ class ClassroomService
             $verification = ClassroomMatch::verification(
                 $request,
                 $classroom,
-                $rosterByCode->get(ClassroomMatch::studentCode($request->student_code)),
+                $request->student_code === null ? null : $rosterByCode->get(ClassroomMatch::studentCode($request->student_code)),
             );
             $request->forceFill(['verification_status' => $verification])->save();
         }

@@ -15,7 +15,7 @@ class ManualVerifyJoinRequest extends FormRequest
     {
         return [
             'roster_entry_id' => ['required', 'uuid'],
-            'reason' => ['required', 'in:wrong_student_code,wrong_declared_class,account_name_difference,other'],
+            'reason' => ['required', 'in:wrong_student_code,student_code_unknown,wrong_declared_class,account_name_difference,other'],
             'note' => ['required', 'string', 'max:2000'],
         ];
     }

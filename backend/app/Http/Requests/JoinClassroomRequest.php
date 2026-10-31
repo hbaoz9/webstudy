@@ -15,8 +15,8 @@ class JoinClassroomRequest extends FormRequest
     {
         return [
             'class_code' => ['required', 'string', 'max:32'],
-            'student_code' => ['required', 'string', 'max:64'],
-            'declared_class' => ['required', 'string', 'max:255'],
+            'student_code' => ['nullable', 'string', 'max:64'],
+            'declared_class' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

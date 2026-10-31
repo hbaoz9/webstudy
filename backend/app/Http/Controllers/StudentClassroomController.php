@@ -48,7 +48,7 @@ class StudentClassroomController extends Controller
         $values = $request->validated();
 
         return response()->json(['data' => new ClassJoinRequestResource($service->requestJoin(
-            $request->user(), $values['class_code'], $values['student_code'], $values['declared_class']
+            $request->user(), $values['class_code'], $values['student_code'] ?? null, $values['declared_class'] ?? null
         ))], 201);
     }
 

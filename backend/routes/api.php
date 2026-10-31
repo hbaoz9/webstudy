@@ -38,6 +38,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('{classroom}/roster', [TeacherClassroomController::class, 'roster']);
         Route::post('{classroom}/roster/import', [TeacherClassroomController::class, 'importRoster']);
         Route::get('{classroom}/join-requests', [TeacherClassroomController::class, 'joinRequests']);
+        Route::post('{classroom}/join-requests/bulk-approve/preview', [TeacherClassroomController::class, 'bulkApprovalPreview']);
+        Route::post('{classroom}/join-requests/bulk-approve', [TeacherClassroomController::class, 'bulkApprove']);
         Route::post('{classroom}/join-requests/{joinRequest}/approve', [TeacherClassroomController::class, 'approve']);
         Route::post('{classroom}/join-requests/{joinRequest}/reject', [TeacherClassroomController::class, 'reject']);
         Route::post('{classroom}/join-requests/{joinRequest}/manual-verify', [TeacherClassroomController::class, 'manualVerify']);

@@ -123,11 +123,62 @@ class TeacherClassroomController extends Controller
         return response()->json(['data' => $service->importRoster($request->user(), $classroom, $request->validated('rows'))]);
     }
 
-    public function joinRequests(Classroom $classroom): AnonymousResourceCollection
+    public function joinRequests(Request $request, Classroom $classroom): AnonymousResourceCollection
     {
         Gate::authorize('manage', $classroom);
 
-        return ClassJoinRequestResource::collection($classroom->joinRequests()->latest()->paginate(20));
+        $filters = Validator::make($request->query(), [
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'status' => ['sometimes', 'in:all,pending,processed'],
+        ])->validate();
+
+        $totals = $classroom->joinRequests()->select('status')
+            ->selectRaw('COUNT(*) as aggregate')->groupBy('status')->pluck('aggregate', 'status');
+        $pending = (int) ($totals['pending'] ?? 0);
+        $approved = (int) ($totals['approved'] ?? 0);
+        $rejected = (int) ($totals['rejected'] ?? 0);
+
+        $joinRequests = $classroom->joinRequests();
+        if (($filters['status'] ?? null) === 'pending') {
+            $joinRequests->where('status', 'pending');
+        } elseif (($filters['status'] ?? null) === 'processed') {
+            $joinRequests->whereIn('status', ['approved', 'rejected']);
+        }
+
+        return ClassJoinRequestResource::collection($joinRequests
+            ->orderByDesc('created_at')->orderByDesc('id')->paginate(20)->withQueryString())
+            ->additional(['statusCounts' => [
+                'pending' => $pending,
+                'approved' => $approved,
+                'rejected' => $rejected,
+                'processed' => $approved + $rejected,
+                'total' => $pending + $approved + $rejected,
+            ]]);
+    }
+
+    public function bulkApprovalPreview(Request $request, Classroom $classroom, ClassMembershipService $service): JsonResponse
+    {
+        Gate::authorize('manage', $classroom);
+        $values = Validator::make($request->all(), [
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'request_ids' => ['prohibited'],
+            'verification_status' => ['prohibited'],
+        ])->validate();
+
+        return response()->json($service->bulkApprovalPreview($request->user(), $classroom, (int) ($values['page'] ?? 1)));
+    }
+
+    public function bulkApprove(Request $request, Classroom $classroom, ClassMembershipService $service): JsonResponse
+    {
+        Gate::authorize('manage', $classroom);
+        $values = Validator::make($request->all(), [
+            'request_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'request_ids.*' => ['required', 'uuid', 'distinct:ignore_case'],
+            'verification_status' => ['prohibited'],
+            'status' => ['prohibited'],
+        ])->validate();
+
+        return response()->json($service->bulkApprove($request->user(), $classroom, $values['request_ids']));
     }
 
     public function approve(Request $request, Classroom $classroom, ClassJoinRequest $joinRequest, ClassMembershipService $service): ClassMembershipResource

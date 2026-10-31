@@ -31,6 +31,49 @@ class ClassroomMembershipPostgresConstraintsTest extends TestCase
         }
     }
 
+    public function test_pending_requests_can_have_null_code_and_class_but_still_enforce_one_pending_per_student(): void
+    {
+        DB::beginTransaction();
+        try {
+            $classroom = $this->createClassroom('10A1', 'ABC123');
+            $firstStudent = User::factory()->create()->refresh();
+            $secondStudent = User::factory()->create()->refresh();
+
+            foreach ([$firstStudent, $secondStudent] as $student) {
+                $request = $classroom->joinRequests()->make([
+                    'student_name' => $student->name,
+                    'email' => $student->email,
+                    'student_code' => null,
+                    'declared_class' => null,
+                ]);
+                $request->student()->associate($student);
+                $request->save();
+            }
+
+            $this->assertSame(2, $classroom->joinRequests()->whereNull('student_code')->count());
+            $this->assertSame(2, $classroom->joinRequests()->whereNull('declared_class')->count());
+            $this->assertSame(1, $classroom->joinRequests()->where('student_id', $firstStudent->id)->where('status', 'pending')->count());
+
+            try {
+                DB::transaction(function () use ($classroom, $firstStudent): void {
+                    $duplicate = $classroom->joinRequests()->make([
+                        'student_name' => $firstStudent->name,
+                        'email' => $firstStudent->email,
+                        'student_code' => null,
+                        'declared_class' => null,
+                    ]);
+                    $duplicate->student()->associate($firstStudent);
+                    $duplicate->save();
+                });
+                $this->fail('A second pending request was accepted for the same student.');
+            } catch (QueryException $exception) {
+                $this->assertSame('23505', $exception->getCode());
+            }
+        } finally {
+            DB::rollBack();
+        }
+    }
+
     public function test_roster_codes_are_unique_after_normalization(): void
     {
         $this->expectException(QueryException::class);

@@ -55,6 +55,35 @@ class ClassMembershipServiceTest extends TestCase
         $this->assertDatabaseCount('class_join_requests', 2);
     }
 
+    public function test_students_without_codes_have_independent_pending_requests(): void
+    {
+        [, $classroom] = $this->classroom('10A1', '10A1-01');
+        $firstStudent = User::factory()->create()->refresh();
+        $secondStudent = User::factory()->create()->refresh();
+        $service = app(ClassMembershipService::class);
+
+        $first = $service->requestJoin($firstStudent, $classroom->code);
+        $second = $service->requestJoin($secondStudent, $classroom->code);
+
+        $this->assertSame('pending', $first->status);
+        $this->assertSame('pending', $second->status);
+        $this->assertNull($first->student_code);
+        $this->assertNull($second->student_code);
+        $this->assertNull($first->declared_class);
+        $this->assertNull($second->declared_class);
+        $this->assertDatabaseCount('class_join_requests', 2);
+        $this->assertDatabaseCount('class_memberships', 0);
+
+        try {
+            $service->requestJoin($firstStudent, $classroom->code);
+            $this->fail('The same student submitted a second pending request.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('classroom', $exception->errors());
+        }
+
+        $this->assertDatabaseCount('class_join_requests', 2);
+    }
+
     public function test_mismatched_request_cannot_be_approved(): void
     {
         [$teacher, $classroom] = $this->classroom('10A1', '10A1-01');
@@ -194,15 +223,67 @@ class ClassMembershipServiceTest extends TestCase
         $student = User::factory()->create()->refresh();
         $service = app(ClassMembershipService::class);
         $request = $service->requestJoin($student, $classroom->code, '10A1-01', '10A1');
-        DB::unprepared("CREATE TRIGGER reject_membership BEFORE INSERT ON class_memberships BEGIN SELECT RAISE(ABORT, 'forced failure'); END");
+        $driver = DB::getDriverName();
+
+        if ($driver === 'pgsql') {
+            DB::unprepared(<<<'SQL'
+                CREATE FUNCTION test_reject_membership_insert() RETURNS trigger
+                LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced failure'; END; $$
+                SQL);
+            DB::unprepared('CREATE TRIGGER reject_membership BEFORE INSERT ON class_memberships FOR EACH ROW EXECUTE FUNCTION test_reject_membership_insert()');
+        } else {
+            $this->assertSame('sqlite', $driver);
+            DB::unprepared("CREATE TRIGGER reject_membership BEFORE INSERT ON class_memberships BEGIN SELECT RAISE(ABORT, 'forced failure'); END");
+        }
 
         try {
             $service->approve($teacher, $request);
             $this->fail('Membership insertion unexpectedly succeeded.');
-        } catch (QueryException) {
+        } catch (QueryException $exception) {
+            $this->assertStringContainsString('forced failure', $exception->getMessage());
             $this->assertSame('pending', $request->fresh()->status);
             $this->assertNull($classroom->rosterEntries()->first()->linked_user_id);
             $this->assertDatabaseCount('class_memberships', 0);
+        } finally {
+            DB::unprepared('DROP TRIGGER reject_membership'.($driver === 'pgsql' ? ' ON class_memberships' : ''));
+            if ($driver === 'pgsql') {
+                DB::unprepared('DROP FUNCTION test_reject_membership_insert()');
+            }
+        }
+    }
+
+    public function test_bulk_approval_propagates_membership_insert_failure_and_rolls_back_item(): void
+    {
+        [$teacher, $classroom] = $this->classroom('10A1', '10A1-01');
+        $student = User::factory()->create()->refresh();
+        $service = app(ClassMembershipService::class);
+        $request = $service->requestJoin($student, $classroom->code, '10A1-01');
+        $driver = DB::getDriverName();
+
+        if ($driver === 'pgsql') {
+            DB::unprepared(<<<'SQL'
+                CREATE FUNCTION test_reject_bulk_membership_insert() RETURNS trigger
+                LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced bulk failure'; END; $$
+                SQL);
+            DB::unprepared('CREATE TRIGGER reject_bulk_membership BEFORE INSERT ON class_memberships FOR EACH ROW EXECUTE FUNCTION test_reject_bulk_membership_insert()');
+        } else {
+            $this->assertSame('sqlite', $driver);
+            DB::unprepared("CREATE TRIGGER reject_bulk_membership BEFORE INSERT ON class_memberships BEGIN SELECT RAISE(ABORT, 'forced bulk failure'); END");
+        }
+
+        try {
+            $service->bulkApprove($teacher, $classroom, [$request->id]);
+            $this->fail('Bulk approval unexpectedly reported an infrastructure failure as skipped.');
+        } catch (QueryException $exception) {
+            $this->assertStringContainsString('forced bulk failure', $exception->getMessage());
+            $this->assertSame('pending', $request->fresh()->status);
+            $this->assertNull($classroom->rosterEntries()->first()->linked_user_id);
+            $this->assertDatabaseCount('class_memberships', 0);
+        } finally {
+            DB::unprepared('DROP TRIGGER reject_bulk_membership'.($driver === 'pgsql' ? ' ON class_memberships' : ''));
+            if ($driver === 'pgsql') {
+                DB::unprepared('DROP FUNCTION test_reject_bulk_membership_insert()');
+            }
         }
     }
 
