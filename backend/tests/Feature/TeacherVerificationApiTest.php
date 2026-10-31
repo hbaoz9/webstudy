@@ -26,8 +26,9 @@ class TeacherVerificationApiTest extends TestCase
         $teacher = $this->teacher();
         $admin = $this->userWithRole('admin');
 
-        $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
+        $firstSubmission = $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
             ->assertCreated()->assertJsonPath('data.status', 'pending');
+        $firstSubmissionId = $firstSubmission->json('data.id');
         $this->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
             ->assertUnprocessable();
         $this->getJson('/api/teacher/verification')->assertOk()
@@ -35,21 +36,22 @@ class TeacherVerificationApiTest extends TestCase
         $this->assertSame('pending', $teacher->teacherProfile->fresh()->verification_status);
 
         $this->actingAs($admin)->getJson('/api/admin/teacher-verifications')->assertOk()->assertJsonCount(1, 'data');
-        $this->postJson('/api/admin/teacher-verifications/1/reject', [])->assertUnprocessable()->assertJsonValidationErrors('reason');
-        $this->postJson('/api/admin/teacher-verifications/1/reject', ['reason' => 'Missing proof'])
+        $this->postJson("/api/admin/teacher-verifications/{$firstSubmissionId}/reject", [])->assertUnprocessable()->assertJsonValidationErrors('reason');
+        $this->postJson("/api/admin/teacher-verifications/{$firstSubmissionId}/reject", ['reason' => 'Missing proof'])
             ->assertOk()->assertJsonPath('data.status', 'rejected');
 
-        $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
-            ->assertCreated()->assertJsonPath('data.id', 2);
-        $this->actingAs($admin)->postJson('/api/admin/teacher-verifications/2/approve')
+        $secondSubmissionId = $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])
+            ->assertCreated()->json('data.id');
+        $this->assertNotSame($firstSubmissionId, $secondSubmissionId);
+        $this->actingAs($admin)->postJson("/api/admin/teacher-verifications/{$secondSubmissionId}/approve")
             ->assertOk()->assertJsonPath('data.status', 'verified');
         $this->getJson('/api/admin/teacher-verifications?status=all')->assertOk()->assertJsonCount(2, 'data');
         $this->getJson('/api/admin/teacher-verifications?status=invalid')->assertUnprocessable();
         $this->assertNotNull($teacher->teacherProfile->fresh()->verified_at);
         $this->actingAs($teacher)->getJson('/api/teacher/verification')->assertOk()
             ->assertJsonPath('data.verification_status', 'verified')->assertJsonCount(2, 'data.submissions');
-        $this->assertDatabaseHas('teacher_verification_submissions', ['id' => 1, 'status' => 'rejected', 'rejection_reason' => 'Missing proof']);
-        $this->assertDatabaseHas('teacher_verification_submissions', ['id' => 2, 'status' => 'verified', 'reviewed_by' => $admin->id]);
+        $this->assertDatabaseHas('teacher_verification_submissions', ['id' => $firstSubmissionId, 'status' => 'rejected', 'rejection_reason' => 'Missing proof']);
+        $this->assertDatabaseHas('teacher_verification_submissions', ['id' => $secondSubmissionId, 'status' => 'verified', 'reviewed_by' => $admin->id]);
     }
 
     public function test_student_and_teacher_cannot_review_and_student_cannot_submit(): void
@@ -58,14 +60,14 @@ class TeacherVerificationApiTest extends TestCase
         $otherTeacher = $this->teacher();
         $student = User::factory()->create()->refresh();
         $this->actingAs($teacher)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])->assertCreated();
+        $submission = TeacherVerificationSubmission::query()->firstOrFail();
 
         $this->actingAs($student)->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])->assertForbidden();
-        $this->postJson('/api/admin/teacher-verifications/1/approve')->assertForbidden();
-        $this->actingAs($otherTeacher)->postJson('/api/admin/teacher-verifications/1/reject', ['reason' => 'No'])
+        $this->postJson("/api/admin/teacher-verifications/{$submission->id}/approve")->assertForbidden();
+        $this->actingAs($otherTeacher)->postJson("/api/admin/teacher-verifications/{$submission->id}/reject", ['reason' => 'No'])
             ->assertForbidden();
         $this->getJson('/api/teacher/verification')->assertOk()->assertJsonCount(0, 'data.submissions');
-        $this->assertDatabaseHas('teacher_verification_submissions', ['id' => 1, 'status' => 'pending']);
-        $submission = TeacherVerificationSubmission::query()->firstOrFail();
+        $this->assertDatabaseHas('teacher_verification_submissions', ['id' => $submission->id, 'status' => 'pending']);
         $this->assertFalse(Gate::forUser($student)->allows('review', $submission));
         $this->assertTrue(Gate::forUser($teacher)->allows('view', $submission));
         $this->assertFalse(Gate::forUser($otherTeacher)->allows('view', $submission));
@@ -78,8 +80,9 @@ class TeacherVerificationApiTest extends TestCase
         $this->actingAs($teacher)->postJson('/api/teacher/verification', ['full_name' => ''])
             ->assertUnprocessable()->assertJsonValidationErrors(['full_name', 'school_name', 'document']);
         $this->post('/api/teacher/verification', $this->submission(), ['Accept' => 'application/json'])->assertCreated();
-        $this->actingAs($admin)->postJson('/api/admin/teacher-verifications/1/approve')->assertOk();
-        $this->postJson('/api/admin/teacher-verifications/1/approve')->assertUnprocessable();
+        $submission = TeacherVerificationSubmission::query()->firstOrFail();
+        $this->actingAs($admin)->postJson("/api/admin/teacher-verifications/{$submission->id}/approve")->assertOk();
+        $this->postJson("/api/admin/teacher-verifications/{$submission->id}/approve")->assertUnprocessable();
         $this->assertDatabaseCount('teacher_verification_submissions', 1);
     }
 
