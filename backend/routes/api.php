@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\StudentClassroomController;
+use App\Http\Controllers\StudentLessonController;
 use App\Http\Controllers\TeacherClassroomController;
 use App\Http\Controllers\TeacherLessonController;
 use App\Http\Controllers\TeacherVerificationController;
@@ -47,6 +48,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
     });
 
     Route::middleware('role:student')->prefix('student')->group(function (): void {
+        Route::get('lessons', [StudentLessonController::class, 'index']);
+        Route::get('lessons/{curriculumLesson}', [StudentLessonController::class, 'show']);
         Route::get('classrooms', [StudentClassroomController::class, 'index']);
         Route::get('classrooms/lookup/{code}', [StudentClassroomController::class, 'lookup']);
         Route::get('classrooms/{classroom}', [StudentClassroomController::class, 'show']);
