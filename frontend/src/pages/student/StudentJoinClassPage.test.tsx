@@ -66,13 +66,14 @@ describe("Student join with Laravel API mock", () => {
     await renderStudent();
     await lookup();
     expect(document.body.textContent).toContain("LỚP HỌC ĐƯỢC TÌM THẤY");
+    expect(document.body.textContent).toContain("Năm học 2026-2027");
+    expect(document.body.textContent).not.toContain("Lớp đang học (ví dụ: 10A1)");
     expect(document.body.textContent).not.toContain("học sinh đang tham gia");
-    await input("Mã học sinh trong danh sách lớp", "HS001");
-    await input("Lớp đang học", "10A1");
+    await input("Mã học sinh (nếu đã được cấp)", "HS001");
     const form = document.querySelector("form")!;
     await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
     expect(postCalls(mock, "/api/student/join-requests")).toHaveLength(1);
-    expect(JSON.parse(postCalls(mock, "/api/student/join-requests")[0][1].body)).toEqual({ class_code: "ABC234", student_code: "HS001", declared_class: "10A1" });
+    expect(JSON.parse(postCalls(mock, "/api/student/join-requests")[0][1].body)).toEqual({ class_code: "ABC234", student_code: "HS001" });
     expect(button("Đang gửi…").disabled).toBe(true);
     expect(document.body.textContent).not.toContain("Đã tham gia lớp");
     requests = [request];
@@ -80,8 +81,42 @@ describe("Student join with Laravel API mock", () => {
     expect(document.body.textContent).toContain("Đang chờ giáo viên duyệt");
     expect(document.body.textContent).not.toContain("Đã tham gia lớp");
     await act(async () => { root.render(<MemoryRouter key="refresh"><StudentJoinClassPage /></MemoryRouter>); });
-    expect(document.body.textContent).toContain("Chờ giáo viên duyệt");
+    expect(document.body.textContent).toContain("Yêu cầu đang chờ giáo viên duyệt");
     expect(postCalls(mock, "/api/student/join-requests")).toHaveLength(1);
+  });
+
+  it("requires a class code but sends only that code when the optional student code is blank", async () => {
+    const codeOnlyRequest = { ...request, studentCode: null, declaredClass: null, verificationStatus: "unverified" };
+    let requests: typeof codeOnlyRequest[] = [];
+    const mock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/student/join-requests?page=1") return Promise.resolve(json(page(requests)));
+      if (url === "/api/student/classrooms?page=1") return Promise.resolve(json(page([])));
+      if (url === "/api/student/classrooms/lookup/ABC234") return Promise.resolve(json({ data: classroom }));
+      if (url === "/sanctum/csrf-cookie") return Promise.resolve(new Response(null, { status: 204 }));
+      if (url === "/api/student/join-requests" && init?.method === "POST") { requests = [codeOnlyRequest]; return Promise.resolve(json({ data: codeOnlyRequest }, 201)); }
+      throw new Error(`Unexpected ${init?.method} ${url}`);
+    });
+    vi.stubGlobal("fetch", mock);
+    await renderStudent();
+    const classCodeInput = [...document.querySelectorAll("label")].find((node) => node.textContent?.includes("Mã lớp do giáo viên"))?.querySelector("input");
+    const studentCodeInput = [...document.querySelectorAll("label")].find((node) => node.textContent?.includes("Mã học sinh"))?.querySelector("input");
+    expect(classCodeInput?.required).toBe(true);
+    expect(studentCodeInput?.required).toBe(false);
+    expect(document.body.textContent).not.toContain("Lớp đang học (ví dụ: 10A1)");
+    expect(button("Gửi yêu cầu chờ giáo viên duyệt").disabled).toBe(true);
+    expect(postCalls(mock, "/api/student/join-requests")).toHaveLength(0);
+
+    await lookup();
+    expect(document.body.textContent).toContain("10A1");
+    expect(document.body.textContent).toContain("Năm học 2026-2027");
+    await input("Mã học sinh (nếu đã được cấp)", "   ");
+    await act(async () => { document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(postCalls(mock, "/api/student/join-requests")).toHaveLength(1);
+    expect(JSON.parse(postCalls(mock, "/api/student/join-requests")[0][1].body)).toEqual({ class_code: "ABC234" });
+    expect(document.body.textContent).toContain("Yêu cầu đang chờ giáo viên duyệt");
+    expect(document.querySelector('[aria-labelledby="pending-request-title"]')?.textContent).toContain("Mã học sinh: Chưa cung cấp");
+    expect(document.body.textContent).not.toContain("Lớp khai báo:");
+    expect(document.body.textContent).not.toContain("Lớp đang tham gia");
   });
 
   it("handles missing class and status loading failure with retry", async () => {
@@ -98,7 +133,7 @@ describe("Student join with Laravel API mock", () => {
     await act(async () => { button("Thử lại").click(); });
     await lookup("BADCODE");
     expect(document.body.textContent).toContain("Không tìm thấy lớp đang hoạt động");
-    expect(button("Gửi yêu cầu tham gia").disabled).toBe(true);
+    expect(button("Gửi yêu cầu chờ giáo viên duyệt").disabled).toBe(true);
   });
 
   it("shows approved request without active membership distinctly and permits rejected resubmission", async () => {
@@ -113,12 +148,12 @@ describe("Student join with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await renderStudent(); await lookup();
-    expect(document.body.textContent).toContain("không có membership đang hoạt động");
+    expect(document.body.textContent).toContain("hiện bạn chưa tham gia lớp này");
     expect(document.body.textContent).not.toContain("Bạn đã là thành viên của lớp học này.");
     latest = { ...request, status: "rejected" };
-    await act(async () => { button("Làm mới trạng thái").click(); });
+    await act(async () => { (document.querySelector('button[aria-label="Làm mới trạng thái"]') as HTMLButtonElement).click(); });
     expect(document.body.textContent).toContain("Yêu cầu trước đó đã bị từ chối");
-    await input("Mã học sinh trong danh sách lớp", "HS001"); await input("Lớp đang học", "10A1");
+    await input("Mã học sinh (nếu đã được cấp)", "HS001");
     await act(async () => { document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
     expect(postCalls(mock, "/api/student/join-requests")).toHaveLength(1);
     expect(document.body.textContent).toContain("Đang chờ giáo viên duyệt");
@@ -141,6 +176,53 @@ describe("Student join with Laravel API mock", () => {
     expect(document.querySelector("form")).toBeNull();
   });
 
+  it("highlights a pending request from a later API page and keeps older requests collapsed", async () => {
+    const old = { ...request, id: "old", status: "rejected", requestedAt: "2026-10-28T00:00:00Z" };
+    const laterPending = { ...request, id: "later", studentCode: null, declaredClass: null, requestedAt: "2026-10-30T00:00:00Z" };
+    const mock = vi.fn((url: string) => {
+      if (url === "/api/student/join-requests?page=1") return Promise.resolve(json(page([old], 2)));
+      if (url === "/api/student/join-requests?page=2") return Promise.resolve(json(page([laterPending])));
+      if (url === "/api/student/classrooms?page=1") return Promise.resolve(json(page([])));
+      if (url === "/api/student/classrooms/lookup/ABC234") return Promise.resolve(json({ data: classroom }));
+      throw new Error(`Unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", mock);
+    await renderStudent(); await lookup();
+    expect(mock.mock.calls.some(([url]) => url === "/api/student/join-requests?page=2")).toBe(true);
+    expect(document.querySelector('[aria-labelledby="pending-request-title"]')?.textContent).toContain("Chưa cung cấp");
+    expect(button("Đang chờ giáo viên duyệt").disabled).toBe(true);
+    expect(document.querySelectorAll("#join-history-list li")).toHaveLength(0);
+    await act(async () => { button("Xem lịch sử (1)").click(); });
+    expect(document.querySelectorAll("#join-history-list li")).toHaveLength(1);
+    expect(document.querySelector("#join-history-list")?.textContent).toContain("Bị từ chối");
+    await act(async () => { button("Thu gọn lịch sử").click(); });
+    expect(document.querySelectorAll("#join-history-list li")).toHaveLength(0);
+  });
+
+  it("disables the icon refresh while a request is pending and ignores rapid repeated clicks", async () => {
+    let resolveRefresh: (response: Response) => void = () => {};
+    let requestLoads = 0;
+    const mock = vi.fn((url: string) => {
+      if (url === "/api/student/join-requests?page=1") {
+        requestLoads += 1;
+        return requestLoads === 1 ? Promise.resolve(json(page([]))) : new Promise<Response>((resolve) => { resolveRefresh = resolve; });
+      }
+      if (url === "/api/student/classrooms?page=1") return Promise.resolve(json(page([])));
+      throw new Error(`Unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", mock);
+    await renderStudent();
+    const refresh = document.querySelector('button[aria-label="Làm mới trạng thái"]') as HTMLButtonElement;
+    expect(refresh.title).toBe("Làm mới trạng thái");
+    await act(async () => { refresh.click(); refresh.click(); });
+    expect(requestLoads).toBe(2);
+    const busy = document.querySelector('button[aria-label="Đang làm mới trạng thái"]') as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(busy.title).toBe("Đang làm mới trạng thái");
+    await act(async () => { resolveRefresh(json(page([]))); });
+    expect((document.querySelector('button[aria-label="Làm mới trạng thái"]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it.each([401, 403, 422, 500, "network"])("shows POST %s failure without false success", async (failure) => {
     const mock = vi.fn((url: string, init?: RequestInit) => {
       if (url === "/api/student/join-requests?page=1" || url === "/api/student/classrooms?page=1") return Promise.resolve(json(page([])));
@@ -151,7 +233,7 @@ describe("Student join with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await renderStudent(); await lookup();
-    await input("Mã học sinh trong danh sách lớp", "HS001"); await input("Lớp đang học", "10A1");
+    await input("Mã học sinh (nếu đã được cấp)", "HS001");
     await act(async () => { document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
     expect(postCalls(mock, "/api/student/join-requests")).toHaveLength(1);
     expect(document.body.textContent).not.toContain("Đã gửi yêu cầu tham gia 10A1");
@@ -167,15 +249,15 @@ describe("Student join with Laravel API mock", () => {
       if (url === "/api/student/classrooms/lookup/ABC234") return Promise.resolve(json({ data: classroom }));
       if (url === "/sanctum/csrf-cookie") return Promise.resolve(new Response(null, { status: 204 }));
       if (url === "/api/student/join-requests" && init?.method === "POST") { join = request; return Promise.resolve(json({ data: join }, 201)); }
-      if (url === "/api/teacher/classrooms/class-1/join-requests?page=1") return Promise.resolve(json(page(join ? [join] : [])));
+      if (url === "/api/teacher/classrooms/class-1/join-requests?page=1&status=pending") return Promise.resolve(json(page(join && !active ? [join] : [])));
       if (url === "/api/teacher/classrooms/class-1/join-requests/request-1/approve" && init?.method === "POST") { active = true; join = { ...request, status: "approved" }; return Promise.resolve(json({ data: membership }, 201)); }
       throw new Error(`Unexpected ${init?.method} ${url}`);
     });
     vi.stubGlobal("fetch", mock);
     await renderStudent(); await lookup();
-    await input("Mã học sinh trong danh sách lớp", "HS001"); await input("Lớp đang học", "10A1");
+    await input("Mã học sinh (nếu đã được cấp)", "HS001");
     await act(async () => { document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
-    expect(document.body.textContent).toContain("Chờ giáo viên duyệt");
+    expect(document.body.textContent).toContain("Yêu cầu đang chờ giáo viên duyệt");
     expect(active).toBe(false);
     await act(async () => { root.render(<TeacherJoinRequestsSection classroomId="class-1" archived={false} onMembershipChange={async () => {}} />); });
     await act(async () => { button("Duyệt").click(); });
@@ -198,6 +280,8 @@ describe("Student join with Laravel API mock", () => {
     vi.stubGlobal("fetch", mock);
     await renderStudent();
     expect(document.body.textContent).toContain("Lớp đang tham gia");
+    expect(document.querySelectorAll("#join-history-list li")).toHaveLength(0);
+    await act(async () => { button("Xem lịch sử (2)").click(); });
     const history = [...document.querySelectorAll("section[aria-labelledby='join-history-title'] li")];
     expect(history).toHaveLength(2);
     expect(history[0].textContent).toContain("Đã duyệt");
@@ -216,6 +300,7 @@ describe("Student join with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await renderStudent();
+    await act(async () => { button("Xem lịch sử (2)").click(); });
     const history = [...document.querySelectorAll("section[aria-labelledby='join-history-title'] li")];
     expect(history[0].textContent).toContain("Đã duyệt");
     expect(history[1].textContent).toContain("Bị từ chối");

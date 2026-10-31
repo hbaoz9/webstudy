@@ -40,6 +40,10 @@ const reasonOptions: {
   label: string;
 }[] = [
   {
+    value: 'student_code_unknown',
+    label: 'Chưa được cấp hoặc chưa biết mã học sinh',
+  },
+  {
     value: 'wrong_student_code',
     label: 'Học sinh nhập sai mã',
   },
@@ -96,7 +100,7 @@ export function ManualVerificationModal({
             entry.studentCode,
           ) ===
           normalizeStudentCode(
-            request.studentCode,
+            request.studentCode ?? "",
           );
 
         const isAvailable =
@@ -141,6 +145,15 @@ export function ManualVerificationModal({
     note.trim().length >= 5 &&
     note.trim().length <= 2000 &&
     !busy;
+
+  const availableReasons = backendMode
+    ? reasonOptions.filter((option) =>
+        request.studentCode === null
+          ? option.value === 'student_code_unknown'
+          : option.value !== 'student_code_unknown' &&
+            (request.declaredClass !== null || option.value !== 'wrong_declared_class'),
+      )
+    : reasonOptions.filter((option) => option.value !== 'student_code_unknown');
 
   const handleConfirm = () => {
     if (
@@ -204,31 +217,36 @@ export function ManualVerificationModal({
               Tài khoản đang yêu cầu vào lớp
             </p>
 
-            <h3 className="mt-2 font-extrabold text-ink">
+            <h3 className="mt-2 break-words font-extrabold text-ink">
               {request.studentName}
             </h3>
 
             <div className="mt-3 grid gap-2 text-sm text-secondary sm:grid-cols-2">
               <p>
                 Email:{' '}
-                <strong className="text-ink">
+                <strong className="break-all text-ink">
                   {request.email}
                 </strong>
               </p>
 
-              <p>
-                Mã đã nhập:{' '}
-                <strong className="text-ink">
-                  {request.studentCode}
-                </strong>
-              </p>
+              <p>{request.studentCode ? <>Mã đã nhập: <strong className="text-ink">{request.studentCode}</strong></> : 'Chưa cung cấp mã học sinh'}</p>
 
-              <p>
+              {backendMode && <p className="sm:col-span-2 text-amber-700">
+                {request.studentCode === null
+                  ? 'Chưa có mã để đối chiếu. Hãy xác nhận trực tiếp tài khoản và chọn đúng học sinh trong danh sách lớp.'
+                  : request.verificationStatus === 'conflict'
+                    ? 'Mã này đã liên kết với tài khoản khác. Không chọn dòng đã có tài khoản; hãy kiểm tra danh tính trước khi xử lý.'
+                    : request.verificationStatus === 'unverified'
+                      ? 'Mã đã nhập chưa tìm thấy trong danh sách lớp. Hãy đối chiếu trực tiếp trước khi chọn học sinh.'
+                      : 'Hãy đối chiếu trực tiếp danh tính với dòng học sinh được chọn.'}
+              </p>}
+
+              {request.declaredClass && <p>
                 Lớp khai báo:{' '}
                 <strong className="text-ink">
                   {request.declaredClass}
                 </strong>
-              </p>
+              </p>}
 
               <p>
                 Thời gian:{' '}
@@ -362,7 +380,7 @@ export function ManualVerificationModal({
                     Chọn lý do
                   </option>
 
-                  {reasonOptions.map(
+                  {availableReasons.map(
                     (option) => (
                       <option
                         key={option.value}

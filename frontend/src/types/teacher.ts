@@ -46,6 +46,7 @@ export interface ClassRosterEntry {
 
 export type ManualVerificationReason =
   | "wrong_student_code"
+  | "student_code_unknown"
   | "wrong_declared_class"
   | "account_name_difference"
   | "other";

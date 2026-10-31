@@ -17,16 +17,16 @@ export type ClassroomJoinRequest = {
   studentId: number;
   studentName: string;
   email: string;
-  studentCode: string;
-  declaredClass: string;
+  studentCode: string | null;
+  declaredClass: string | null;
   requestedAt: string;
   verificationStatus: "matched" | "unverified" | "mismatch" | "conflict" | "manual_verified";
   status: "pending" | "approved" | "rejected";
   manualVerification?: {
     rosterEntryId: string;
-    originalStudentCode: string;
+    originalStudentCode: string | null;
     resolvedStudentCode: string;
-    reason: "wrong_student_code" | "wrong_declared_class" | "account_name_difference" | "other";
+    reason: "wrong_student_code" | "student_code_unknown" | "wrong_declared_class" | "account_name_difference" | "other";
     note: string;
     verifiedAt: string;
   };
@@ -45,12 +45,39 @@ export type ApiPage<T> = {
   meta: { current_page: number; last_page: number; total: number };
 };
 
+export type TeacherJoinRequestStatus = "all" | "pending" | "processed";
+export type TeacherJoinRequestPage = ApiPage<ClassroomJoinRequest> & {
+  links: { first: string | null; last: string | null; prev: string | null; next: string | null };
+  statusCounts: { pending: number; approved: number; rejected: number; processed: number; total: number };
+};
+
+export type BulkApprovalPreview = {
+  data: {
+    requestId: string;
+    studentName: string;
+    studentEmail: string;
+    submittedStudentCode: string;
+    rosterEntryId: string;
+    rosterStudentName: string;
+    rosterStudentCode: string;
+  }[];
+  summary: { eligibleTotal: number; requiresIndividualReviewTotal: number; pendingTotal: number };
+  meta: { currentPage: number; lastPage: number; perPage: number; hasMore: boolean };
+};
+
+export type BulkApprovalResult = {
+  approvedCount: number;
+  skippedCount: number;
+  results: { requestId: string; status: "approved" | "skipped"; reason?: string }[];
+  statusCounts: TeacherJoinRequestPage["statusCounts"];
+};
+
 export async function lookupStudentClassroom(code: string): Promise<ClassroomPreview> {
   const response = await apiGet<{ data: ClassroomPreview }>(`/student/classrooms/lookup/${encodeURIComponent(code.trim())}`);
   return response.data;
 }
 
-export async function createStudentJoinRequest(input: { class_code: string; student_code: string; declared_class: string }): Promise<ClassroomJoinRequest> {
+export async function createStudentJoinRequest(input: { class_code: string; student_code?: string }): Promise<ClassroomJoinRequest> {
   const response = await apiRequest<{ data: ClassroomJoinRequest }>("/student/join-requests", "POST", input);
   return response.data;
 }
@@ -91,7 +118,7 @@ export async function leaveStudentClassroom(membershipId: string): Promise<Class
 
 export type ManualVerificationInput = {
   roster_entry_id: string;
-  reason: "wrong_student_code" | "wrong_declared_class" | "account_name_difference" | "other";
+  reason: "wrong_student_code" | "student_code_unknown" | "wrong_declared_class" | "account_name_difference" | "other";
   note: string;
 };
 
@@ -100,8 +127,18 @@ export async function manuallyVerifyTeacherJoinRequest(classroomId: string, requ
   return response.data;
 }
 
-export function getTeacherJoinRequests(classroomId: string, page = 1): Promise<ApiPage<ClassroomJoinRequest>> {
-  return apiGet(`/teacher/classrooms/${encodeURIComponent(classroomId)}/join-requests?page=${page}`);
+export function getTeacherJoinRequests(classroomId: string, page = 1, status?: TeacherJoinRequestStatus): Promise<TeacherJoinRequestPage> {
+  const params = new URLSearchParams({ page: String(page) });
+  if (status) params.set("status", status);
+  return apiGet(`/teacher/classrooms/${encodeURIComponent(classroomId)}/join-requests?${params}`);
+}
+
+export function previewTeacherBulkApproval(classroomId: string, page = 1): Promise<BulkApprovalPreview> {
+  return apiRequest(`/teacher/classrooms/${encodeURIComponent(classroomId)}/join-requests/bulk-approve/preview`, "POST", { page });
+}
+
+export function executeTeacherBulkApproval(classroomId: string, requestIds: string[]): Promise<BulkApprovalResult> {
+  return apiRequest(`/teacher/classrooms/${encodeURIComponent(classroomId)}/join-requests/bulk-approve`, "POST", { request_ids: requestIds });
 }
 
 export async function approveTeacherJoinRequest(classroomId: string, requestId: string): Promise<ClassroomMembership> {

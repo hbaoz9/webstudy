@@ -60,6 +60,7 @@ export function JoinRequestCard<T extends JoinRequest | ClassroomJoinRequest>({
     ManualVerificationReason,
     string
   > = {
+    student_code_unknown: 'Chưa được cấp hoặc chưa biết mã học sinh',
     wrong_student_code:
       'Học sinh nhập sai mã',
 
@@ -97,7 +98,7 @@ export function JoinRequestCard<T extends JoinRequest | ClassroomJoinRequest>({
                     Thông tin tài khoản
                 </summary>
 
-                <p className="mt-2 flex items-center gap-2">
+                <p className="mt-2 flex items-center gap-2 break-all">
                     <Mail className="size-4" />
                     {request.email}
                 </p>
@@ -107,14 +108,13 @@ export function JoinRequestCard<T extends JoinRequest | ClassroomJoinRequest>({
                 <IdCard className="size-4 text-muted" />
 
                 <span>
-                  Mã học sinh:{' '}
                   <strong className="text-ink">
-                  {request.studentCode}
+                  {request.studentCode ? `Mã học sinh: ${request.studentCode}` : 'Chưa cung cấp mã học sinh'}
                   </strong>
                 </span>
               </p>
 
-              <p className="flex items-center gap-2">
+              {request.declaredClass && <p className="flex items-center gap-2">
                 <GraduationCap className="size-4 text-muted" />
 
                 <span>
@@ -123,7 +123,7 @@ export function JoinRequestCard<T extends JoinRequest | ClassroomJoinRequest>({
                     {request.declaredClass}
                   </strong>
                 </span>
-              </p>
+              </p>}
 
               <p className="flex items-center gap-2">
                 <Clock3 className="size-4 text-muted" />
@@ -195,7 +195,7 @@ export function JoinRequestCard<T extends JoinRequest | ClassroomJoinRequest>({
       {request.verificationStatus ===
         'unverified' && (
         <div className="mt-4 rounded-lg border border-amber/30 bg-amber/10 px-4 py-3 text-xs leading-5 text-amber-700">
-          Hệ thống chưa tìm thấy học sinh trong danh sách lớp được cung cấp.
+          {request.studentCode ? 'Mã học sinh chưa tìm thấy trong danh sách lớp. Hãy đối chiếu trực tiếp trước khi xác minh.' : 'Học sinh chưa cung cấp mã học sinh. Hãy đối chiếu tài khoản với danh sách lớp trước khi xác minh.'}
         </div>
       )}
 
@@ -263,7 +263,7 @@ export function JoinRequestCard<T extends JoinRequest | ClassroomJoinRequest>({
               <strong className="text-ink">
                 {
                   request.manualVerification
-                    .originalStudentCode
+                    .originalStudentCode ?? 'Chưa cung cấp'
                 }
               </strong>
             </p>

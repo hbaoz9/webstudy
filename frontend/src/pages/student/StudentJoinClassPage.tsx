@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { RefreshCw } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { ApiError } from "../../service/api/client";
 import {
@@ -18,7 +19,6 @@ export default function StudentJoinClassPage() {
   const { session } = useAuth();
   const [classCode, setClassCode] = useState("");
   const [studentCode, setStudentCode] = useState("");
-  const [declaredClass, setDeclaredClass] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [lookup, setLookup] = useState<{ code: string; classroom?: ClassroomPreview; error?: string } | null>(null);
@@ -28,7 +28,10 @@ export default function StudentJoinClassPage() {
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const submitLock = useRef(false);
+  const refreshLock = useRef(false);
   const statusGeneration = useRef(0);
 
   const normalizedClassCode = classCode.trim().toUpperCase();
@@ -39,6 +42,8 @@ export default function StudentJoinClassPage() {
   const joinState = isJoined ? "joined" : latestRequest?.status ?? "none";
   const activeMembership = memberships.find((membership) => membership.status === "active");
   const sortedRequests = [...requests].sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt));
+  const currentPending = sortedRequests.find((request) => request.status === "pending");
+  const historyRequests = sortedRequests.filter((request) => request.id !== currentPending?.id);
   const isSubmitLocked = submitting || lookupLoading || statusLoading || Boolean(statusError) || !targetClassroom || joinState === "joined" || joinState === "pending";
 
   const loadStatus = useCallback(async () => {
@@ -56,6 +61,14 @@ export default function StudentJoinClassPage() {
       if (generation === statusGeneration.current) setStatusLoading(false);
     }
   }, []);
+
+  const refreshStatus = async () => {
+    if (refreshLock.current || statusLoading) return;
+    refreshLock.current = true;
+    setRefreshing(true);
+    try { await loadStatus(); }
+    finally { refreshLock.current = false; setRefreshing(false); }
+  };
 
   useEffect(() => {
     void loadStatus();
@@ -85,15 +98,10 @@ export default function StudentJoinClassPage() {
     setError("");
     setSuccess("");
     const trimmedStudentCode = studentCode.trim();
-    const trimmedDeclaredClass = declaredClass.trim();
-    if (!trimmedStudentCode || !trimmedDeclaredClass) {
-      setError("Vui lòng nhập mã học sinh và lớp đang học.");
-      return;
-    }
     submitLock.current = true;
     setSubmitting(true);
     try {
-      const created = await createStudentJoinRequest({ class_code: normalizedClassCode, student_code: trimmedStudentCode, declared_class: trimmedDeclaredClass });
+      const created = await createStudentJoinRequest({ class_code: normalizedClassCode, ...(trimmedStudentCode ? { student_code: trimmedStudentCode } : {}) });
       setRequests((current) => [created, ...current]);
       setSuccess(`Đã gửi yêu cầu tham gia ${targetClassroom.name}. Vui lòng chờ giáo viên duyệt.`);
       await loadStatus();
@@ -118,7 +126,7 @@ export default function StudentJoinClassPage() {
       {!statusLoading && !statusError && !activeMembership &&
       <form onSubmit={(event) => void handleSubmit(event)} className="mx-auto max-w-xl space-y-4 rounded-2xl border border-line bg-white p-6 shadow-card">
         <h1 className="text-2xl font-extrabold text-ink">Tham gia lớp học</h1>
-        <p className="text-sm text-secondary">Nhập mã lớp do giáo viên cung cấp và thông tin học sinh để gửi yêu cầu tham gia.</p>
+        <p className="text-sm text-secondary">Nhập mã lớp do giáo viên cung cấp để gửi yêu cầu. Nếu đã biết mã học sinh, bạn có thể nhập thêm.</p>
 
         <div className="rounded-xl bg-canvas px-4 py-3 text-sm text-secondary">
           <p>Tài khoản: <strong className="text-ink">{session?.name ?? ""}</strong></p>
@@ -140,24 +148,21 @@ export default function StudentJoinClassPage() {
             </div>
             {joinState === "joined" && <p role="status" className="rounded-lg bg-emerald/10 p-3 text-sm text-emerald">Bạn đã là thành viên của lớp học này.</p>}
             {joinState === "pending" && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">Yêu cầu của bạn đang chờ giáo viên duyệt. Bạn không cần gửi lại.</p>}
-            {joinState === "approved" && <p role="status" className="rounded-lg bg-sky-50 p-3 text-sm text-sky-700">Yêu cầu đã được duyệt. Hiện không có membership đang hoạt động trong lớp này.</p>}
+            {joinState === "approved" && <p role="status" className="rounded-lg bg-sky-50 p-3 text-sm text-sky-700">Yêu cầu trước đó đã được duyệt, nhưng hiện bạn chưa tham gia lớp này.</p>}
             {joinState === "rejected" && <p role="status" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">Yêu cầu trước đó đã bị từ chối. Bạn có thể kiểm tra thông tin và gửi lại.</p>}
-            {joinState === "none" && <p className="text-sm text-secondary">Lớp đang nhận yêu cầu tham gia. Vui lòng nhập chính xác thông tin học sinh.</p>}
+            {joinState === "none" && <p className="text-sm text-secondary">Lớp đang nhận yêu cầu tham gia. Giáo viên sẽ kiểm tra và xác nhận yêu cầu của bạn.</p>}
           </div>
         )}
 
-        <label className="block text-sm font-semibold text-ink">Mã học sinh trong danh sách lớp
-          <input required value={studentCode} onChange={(event) => setStudentCode(event.target.value)} className="mt-2 h-12 w-full rounded-lg border border-line px-4" />
-        </label>
-        <label className="block text-sm font-semibold text-ink">Lớp đang học (ví dụ: 10A1)
-          <input required value={declaredClass} onChange={(event) => setDeclaredClass(event.target.value)} className="mt-2 h-12 w-full rounded-lg border border-line px-4" />
+        <label className="block text-sm font-semibold text-ink">Mã học sinh (nếu đã được cấp)
+          <input value={studentCode} onChange={(event) => setStudentCode(event.target.value)} className="mt-2 h-12 w-full rounded-lg border border-line px-4" />
         </label>
         {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         {success && <p role="status" className="text-sm text-emerald">{success}</p>}
         {statusLoading && <p role="status" className="text-sm text-secondary">Đang tải trạng thái yêu cầu…</p>}
         {statusError && <div role="alert" className="text-sm text-red-600">{statusError} <button type="button" onClick={() => void loadStatus()} className="font-bold underline">Thử lại</button></div>}
         <button type="submit" disabled={isSubmitLocked} className={`min-h-12 rounded-xl px-6 py-3 text-sm font-bold transition ${isSubmitLocked ? "cursor-not-allowed bg-slate-200 text-slate-500" : "bg-emerald text-white hover:opacity-90"}`}>
-          {submitting ? "Đang gửi…" : joinState === "joined" ? "Đã tham gia lớp" : joinState === "pending" ? "Đang chờ giáo viên duyệt" : joinState === "rejected" ? "Gửi lại yêu cầu tham gia" : "Gửi yêu cầu tham gia"}
+          {submitting ? "Đang gửi…" : joinState === "joined" ? "Đã tham gia lớp" : joinState === "pending" ? "Đang chờ giáo viên duyệt" : joinState === "rejected" ? "Gửi lại yêu cầu chờ giáo viên duyệt" : "Gửi yêu cầu chờ giáo viên duyệt"}
         </button>
         <div><Link to="/student/classes" className="text-sm font-bold text-emerald hover:underline">← Quay về Lớp học của tôi</Link></div>
       </form>}
@@ -165,20 +170,34 @@ export default function StudentJoinClassPage() {
       {statusLoading && <p role="status" className="mx-auto max-w-xl text-sm text-secondary">Đang tải trạng thái yêu cầu…</p>}
       {statusError && <div role="alert" className="mx-auto max-w-xl text-sm text-red-600">{statusError} <button type="button" onClick={() => void loadStatus()} className="font-bold underline">Thử lại</button></div>}
 
-      <section aria-labelledby="join-history-title" className="mx-auto mt-6 max-w-xl rounded-2xl border border-line bg-white p-6 shadow-card">
+      {!statusLoading && !statusError && currentPending && <section aria-labelledby="pending-request-title" className="mx-auto mt-6 max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+        <h2 id="pending-request-title" className="font-extrabold text-ink">Yêu cầu đang chờ giáo viên duyệt</h2>
+        <p className="mt-1 text-sm text-secondary">Gửi lúc {formatRequestedAt(currentPending.requestedAt)} · Mã học sinh: {currentPending.studentCode ?? "Chưa cung cấp"}</p>
+        <p className="mt-1 text-sm text-amber-700">Giáo viên sẽ kiểm tra trước khi bạn được tham gia lớp.</p>
+      </section>}
+
+      <section aria-labelledby="join-history-title" className="mx-auto mt-6 max-w-xl rounded-2xl border border-line bg-white p-4 shadow-card sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="join-history-title" className="text-lg font-extrabold text-ink">Yêu cầu đã gửi</h2>
-          <button type="button" onClick={() => void loadStatus()} disabled={statusLoading} className="text-sm font-bold text-emerald disabled:opacity-50">Làm mới trạng thái</button>
+          <h2 id="join-history-title" className="text-lg font-extrabold text-ink">Lịch sử yêu cầu</h2>
+          <button type="button" onClick={() => void refreshStatus()} disabled={statusLoading || refreshing} aria-label={refreshing ? "Đang làm mới trạng thái" : "Làm mới trạng thái"} title={refreshing ? "Đang làm mới trạng thái" : "Làm mới trạng thái"} className="grid size-11 shrink-0 place-items-center rounded-full text-emerald hover:bg-emerald/10 disabled:cursor-not-allowed disabled:opacity-50">
+            <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+          </button>
         </div>
-        {!statusLoading && !statusError && (requests.length === 0 ? <p className="mt-3 text-sm text-muted">Bạn chưa gửi yêu cầu tham gia lớp nào.</p> :
-          <ul className="mt-4 space-y-3">{sortedRequests.map((request) => {
-            return <li key={request.id} className="rounded-xl border border-line bg-canvas p-4 text-sm">
-              <p className="font-bold text-ink">Mã học sinh: {request.studentCode}</p>
-              <p className="mt-1 text-secondary">{requestLabels[request.status]}</p>
-              <p className="mt-1 text-xs text-muted">Lớp khai báo: {request.declaredClass}</p>
-              <p className="mt-1 text-xs text-muted">Gửi lúc: {formatRequestedAt(request.requestedAt)}</p>
-            </li>;
-          })}</ul>)}
+        {!statusLoading && !statusError && (historyRequests.length === 0
+          ? <p className="mt-3 text-sm text-muted">{currentPending ? "Chưa có yêu cầu trước đó." : "Bạn chưa gửi yêu cầu tham gia lớp nào."}</p>
+          : <>
+            <button type="button" aria-expanded={historyOpen} aria-controls="join-history-list" onClick={() => setHistoryOpen((open) => !open)} className="mt-3 min-h-11 text-sm font-bold text-emerald hover:underline">
+              {historyOpen ? "Thu gọn lịch sử" : `Xem lịch sử (${historyRequests.length})`}
+            </button>
+            {historyOpen && <ul id="join-history-list" className="divide-y divide-line border-t border-line">{historyRequests.map((request) =>
+              <li key={request.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-3 text-sm">
+                <span className="font-semibold text-ink">{requestLabels[request.status]}</span>
+                <time className="text-xs text-muted" dateTime={request.requestedAt}>{formatRequestedAt(request.requestedAt)}</time>
+                {(request.studentCode || request.declaredClass) && <span className="w-full text-xs text-secondary">
+                  {request.studentCode && `Mã học sinh: ${request.studentCode}`}{request.studentCode && request.declaredClass && " · "}{request.declaredClass && `Lớp khai báo: ${request.declaredClass}`}
+                </span>}
+              </li>)}</ul>}
+          </>)}
       </section>
     </div>
   );

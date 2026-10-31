@@ -15,7 +15,7 @@ type VerificationStatusBadgeProps = {
 
 const statusConfig = {
   matched: {
-    label: 'Khớp danh sách lớp',
+    label: 'Mã khớp danh sách lớp',
     icon: CheckCircle2,
     className:
       'border-emerald/30 bg-emerald/10 text-emerald',
