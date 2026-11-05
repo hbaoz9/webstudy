@@ -5,6 +5,7 @@ use App\Http\Controllers\StudentClassroomController;
 use App\Http\Controllers\StudentLessonController;
 use App\Http\Controllers\TeacherClassroomController;
 use App\Http\Controllers\TeacherLessonController;
+use App\Http\Controllers\TeacherQuestionBankController;
 use App\Http\Controllers\TeacherVerificationController;
 use Illuminate\Support\Facades\Route;
 
@@ -17,6 +18,14 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('teacher-verifications/{submission}/document', [TeacherVerificationController::class, 'document']);
+
+    Route::middleware('teacher.verified')->prefix('teacher/questions')->group(function (): void {
+        Route::get('/', [TeacherQuestionBankController::class, 'index']);
+        Route::post('/', [TeacherQuestionBankController::class, 'store']);
+        Route::get('{question}', [TeacherQuestionBankController::class, 'show']);
+        Route::put('{question}', [TeacherQuestionBankController::class, 'update']);
+        Route::delete('{question}', [TeacherQuestionBankController::class, 'destroy']);
+    });
 
     Route::middleware('teacher.verified')->prefix('teacher/lessons')->group(function (): void {
         Route::get('/', [TeacherLessonController::class, 'index']);

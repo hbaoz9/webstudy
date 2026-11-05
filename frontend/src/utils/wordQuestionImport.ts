@@ -104,6 +104,7 @@ export function parseWordQuestions(
     if (block.lines.reduce((sum, line) => sum + line.text.length, 0) > 100000) errors.push("Nội dung câu quá dài.");
     const content = fields.get("content")?.trim() ?? "";
     if (!content) errors.push("Thiếu nội dung sau Câu N:.");
+    if (Array.from(content).length > 5000) errors.push("Nội dung câu hỏi tối đa 5.000 ký tự.");
     const type = (Object.keys(WORD_TYPES) as QuestionType[]).find((key) => normalize(WORD_TYPES[key]) === normalize(fields.get("loai") ?? ""));
     if (!type) errors.push("Thiếu hoặc sai Loại. Dùng một trong 5 loại trong file mẫu.");
     const difficultyText = fields.get("muc do");

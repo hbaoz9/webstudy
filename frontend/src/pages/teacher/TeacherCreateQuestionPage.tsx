@@ -2,14 +2,17 @@ import { questionTypeLabels } from "../../types/question";
 import { toQuestionInput, validateQuestionInput } from "../../utils/questionForm";
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { QuestionImageEditor, questionImageError } from "../../components/questions/QuestionImage";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown, ImageIcon } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { useTeacherQuestions } from "../../contexts/TeacherQuestionsContext";
+import { useAuth } from "../../contexts/AuthContext";
+import { ApiError } from "../../service/api/client";
+import type { TeacherQuestion } from "../../service/api/questions";
 
 import type {
   QuestionDifficulty,
-  QuestionInputV2,
+  QuestionBankInput,
 } from "../../types/question";
 
 import {
@@ -19,14 +22,14 @@ import {
 } from "../../data/geo10Curriculum";
 
 type SingleChoiceQuestionInput = Extract<
-  QuestionInputV2,
+  QuestionBankInput,
   { type: "single_choice" }
 >;
 
-type TrueFalseQuestionInput = Extract<QuestionInputV2, { type: "true_false" }>;
+type TrueFalseQuestionInput = Extract<QuestionBankInput, { type: "true_false" }>;
 
 type MultipleChoiceQuestionInput = Extract<
-  QuestionInputV2,
+  QuestionBankInput,
   { type: "multiple_choice" }
 >;
 
@@ -35,11 +38,12 @@ type QuestionFormInput =
   | TrueFalseQuestionInput
   | MultipleChoiceQuestionInput
   | TrueFalseGroupQuestionInput
-  | Extract<QuestionInputV2, { type: "short_answer" }>;
+  | Extract<QuestionBankInput, { type: "short_answer" }>
+  | Extract<QuestionBankInput, { type: "essay_text" }>;
 type QuestionFormType = QuestionFormInput["type"];
 
 type TrueFalseGroupQuestionInput = Extract<
-  QuestionInputV2,
+  QuestionBankInput,
   { type: "true_false_group" }
 >;
 
@@ -56,6 +60,7 @@ function createInitialQuestion(
   };
 
   if (type === "short_answer") return { ...commonFields, type, correctAnswer: "" };
+  if (type === "essay_text") return { ...commonFields, type, rubricText: "" };
 
   if (type === "true_false") {
     return {
@@ -98,11 +103,28 @@ export default function TeacherCreateQuestionPage() {
   const requestedReturn = params.get("return");
   const backTo = requestedReturn === "/teacher/questions" || requestedReturn?.startsWith("/teacher/questions?") ? requestedReturn : "/teacher/questions";
 
-  const { questions, addQuestion, updateQuestion } = useTeacherQuestions();
+  const { getQuestion, addQuestion, updateQuestion } = useTeacherQuestions();
+  const { session } = useAuth();
+  const [loadedQuestion, setLoadedQuestion] = useState<TeacherQuestion | undefined>();
+  const [loadedFor, setLoadedFor] = useState("");
+  const detailKey = `${session?.userId ?? ""}:${questionId ?? ""}`;
+  const savedQuestion = loadedFor === detailKey ? loadedQuestion : undefined;
+  const [detailLoading, setDetailLoading] = useState(!!questionId);
+  const [detailError, setDetailError] = useState("");
+  const [detailRetry, setDetailRetry] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
-  const savedQuestion = questionId
-    ? questions.find((item) => item.id === questionId)
-    : undefined;
+  useEffect(() => {
+    let active = true;
+    setLoadedQuestion(undefined); setLoadedFor("");
+    if (!questionId || session?.role !== "teacher") { setDetailLoading(false); return () => { active = false; }; }
+    setDetailLoading(true); setDetailError("");
+    void getQuestion(questionId).then((item) => { if (active) { setLoadedQuestion(item); setLoadedFor(detailKey); } })
+      .catch((cause: unknown) => { if (active) setDetailError(cause instanceof Error ? cause.message : "Không tải được câu hỏi."); })
+      .finally(() => { if (active) setDetailLoading(false); });
+    return () => { active = false; };
+  }, [questionId, session?.userId, session?.role, getQuestion, detailKey, detailRetry]);
 
   const [question, setQuestion] = useState<QuestionFormInput>(() => {
     if (savedQuestion) {
@@ -113,10 +135,45 @@ export default function TeacherCreateQuestionPage() {
   });
 
   const [imageProcessing, setImageProcessing] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [fieldError, setFieldError] = useState<{ field: string; message: string } | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [formSequence, setFormSequence] = useState(0);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const mediaRef = useRef<HTMLDivElement>(null);
+  const previousQuestion = useRef(question);
+
+  useEffect(() => {
+    if (previousQuestion.current === question) return;
+    previousQuestion.current = question;
+    setFieldError((current) => {
+      if (!current) return null;
+      if (current.field === "image") return questionImageError(question.image) ? current : null;
+      if (current.field === "explanation") return (question.explanation?.length ?? 0) > 10000 ? current : null;
+      const result = validateQuestionInput(question, geo10Lessons);
+      return !result.ok && result.field === current.field ? current : null;
+    });
+  }, [question]);
+
+  function showFieldError(field: string, message: string) {
+    setFieldError({ field, message });
+    setError("");
+    if (field === "image") setMediaOpen(true);
+    window.requestAnimationFrame(() => {
+      const target = field === "image"
+        ? mediaRef.current?.querySelector<HTMLInputElement>('input[type="url"]') ?? mediaRef.current
+        : [...(formRef.current?.querySelectorAll<HTMLElement>("[data-validation-field]") ?? [])]
+          .find((element) => element.dataset.validationField === field);
+      target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      target?.focus({ preventScroll: true });
+    });
+  }
+
+  function fieldMessage(field: string) {
+    return fieldError?.field === field ? fieldError.message : null;
+  }
 
   useEffect(() => {
     setNotice("");
@@ -128,11 +185,15 @@ export default function TeacherCreateQuestionPage() {
       }
 
       setError("");
+      setFieldError(null);
+      setMediaOpen(Boolean(input?.image));
       return;
     }
 
     setQuestion(createInitialQuestion());
     setError("");
+    setFieldError(null);
+    setMediaOpen(false);
     setNotice("");
   }, [questionId, savedQuestion]);
 
@@ -159,6 +220,7 @@ export default function TeacherCreateQuestionPage() {
     });
 
     setError("");
+    setFieldError(null);
   };
 
   const updateOption = (optionId: string, text: string) => {
@@ -334,22 +396,44 @@ export default function TeacherCreateQuestionPage() {
     });
   };
 
-  function persistQuestion(input: QuestionFormInput, continueAdding: boolean) {
-    if (questionId) {
-      updateQuestion(questionId, input);
-      navigate(backTo);
-      return;
-    }
-    const id = addQuestion(input);
-    if (!id) {
-      setError("Chưa lưu được câu hỏi mới. Nội dung vẫn được giữ trong form; hãy giảm dung lượng ảnh hoặc giải phóng bộ nhớ rồi bấm lưu lại.");
-      return;
-    }
-    if (!continueAdding) { navigate(backTo); return; }
-    setQuestion({ ...createInitialQuestion(input.type), lessonId: input.lessonId, chapter: input.chapter, difficulty: input.difficulty });
-    setFormSequence((current) => current + 1);
-    setNotice("Đã lưu câu hỏi. Tiếp tục soạn câu mới với cùng Bài học, Mức độ và loại câu.");
-    window.requestAnimationFrame(() => { contentRef.current?.focus({ preventScroll: true }); contentRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); });
+  async function persistQuestion(input: QuestionFormInput, continueAdding: boolean) {
+    if (savingRef.current) return;
+    savingRef.current = true; setSaving(true);
+    try {
+      if (questionId) {
+        if (!savedQuestion) return;
+        await updateQuestion(questionId, input, savedQuestion.version);
+        navigate(backTo);
+        return;
+      }
+      await addQuestion(input);
+      if (!continueAdding) { navigate(backTo); return; }
+      setQuestion({ ...createInitialQuestion(input.type), lessonId: input.lessonId, chapter: input.chapter, difficulty: input.difficulty });
+      setMediaOpen(false);
+      setFieldError(null);
+      setFormSequence((current) => current + 1);
+      setNotice("Đã lưu câu hỏi. Tiếp tục soạn câu mới với cùng Bài học, Mức độ và loại câu.");
+      window.requestAnimationFrame(() => { contentRef.current?.focus({ preventScroll: true }); contentRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); });
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 422) {
+        const [key, messages] = Object.entries(cause.errors)[0] ?? [];
+        const optionIndex = /^options\.(\d+)\.text$/.exec(key ?? "");
+        const statementIndex = /^statements\.(\d+)\.content$/.exec(key ?? "");
+        const field = key === "lessonId" ? "lesson" : key === "content" ? "content"
+          : key?.startsWith("image") ? "image"
+          : optionIndex && (input.type === "single_choice" || input.type === "multiple_choice") ? `option:${input.options[Number(optionIndex[1])]?.id}`
+          : statementIndex && input.type === "true_false_group" ? `statement:${input.statements[Number(statementIndex[1])]?.id}`
+          : key === "correctOptionId" || key === "correctOptionIds" ? "correct"
+          : key === "correctAnswer" && input.type === "short_answer" ? "numeric"
+          : key === "rubricText" ? "rubric" : key === "explanation" ? "explanation" : null;
+        if (field && !field.endsWith("undefined") && messages?.[0]) { showFieldError(field, messages[0]); return; }
+      }
+      setError(cause instanceof ApiError && cause.status === 409
+        ? "Câu hỏi đã được cập nhật ở nơi khác. Sao chép nội dung đang soạn, tải lại câu hỏi rồi thử lại."
+        : cause instanceof ApiError && cause.status === 422
+          ? Object.values(cause.errors).flat().join(" ") || cause.message
+        : cause instanceof Error ? cause.message : "Không lưu được câu hỏi. Nội dung đang soạn vẫn được giữ lại.");
+    } finally { savingRef.current = false; setSaving(false); }
   }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -357,25 +441,28 @@ export default function TeacherCreateQuestionPage() {
     setError(""); setNotice("");
     const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
     const continueAdding = !questionId && submitter instanceof HTMLButtonElement && submitter.value === "continue";
-    if (imageProcessing) { setError("Đợi ảnh xử lý xong trước khi lưu câu hỏi."); return; }
+    if (imageProcessing) { showFieldError("image", "Đợi ảnh xử lý xong trước khi lưu câu hỏi."); return; }
     const imageError = questionImageError(question.image);
-    if (imageError) { setError(imageError); return; }
-
     const result = validateQuestionInput(question, geo10Lessons);
     if (!result.ok) {
-      setError(result.error);
+      if ((result.field === "lesson" || result.field === "content") || !imageError) showFieldError(result.field, result.error);
+      else showFieldError("image", imageError);
       return;
     }
+    if (imageError) { showFieldError("image", imageError); return; }
+    if ((question.explanation?.length ?? 0) > 10000) { showFieldError("explanation", "Giải thích tối đa 10.000 ký tự."); return; }
 
-    persistQuestion(result.input, continueAdding);
+    void persistQuestion(result.input, continueAdding);
   };
 
+  if (questionId && (detailLoading || (loadedFor !== detailKey && !detailError))) return <p role="status" className="rounded-xl bg-white p-6">Đang tải câu hỏi…</p>;
   if (questionId && !savedQuestion) {
     return (
       <div className="rounded-2xl border border-line bg-white p-6">
         <h1 className="text-xl font-extrabold text-ink">
-          Không tìm thấy câu hỏi
+          {detailError || "Không tìm thấy câu hỏi"}
         </h1>
+        {detailError && <button type="button" onClick={() => setDetailRetry((value) => value + 1)} className="mt-4 min-h-11 rounded-xl border border-line px-4 font-bold">Thử lại</button>}
 
         <Link
           to={backTo}
@@ -408,6 +495,7 @@ export default function TeacherCreateQuestionPage() {
       </div>
 
       <form
+        ref={formRef}
         id="question-form"
         noValidate
         onSubmit={handleSubmit}
@@ -427,7 +515,8 @@ export default function TeacherCreateQuestionPage() {
                 nextType === "true_false" ||
                 nextType === "multiple_choice" ||
                 nextType === "true_false_group" ||
-                nextType === "short_answer"
+                nextType === "short_answer" ||
+                nextType === "essay_text"
               ) {
                 changeQuestionType(nextType);
               }
@@ -442,6 +531,7 @@ export default function TeacherCreateQuestionPage() {
             <optgroup label="Dạng bổ sung cho luyện tập">
               <option value="true_false">{questionTypeLabels.true_false}</option>
               <option value="multiple_choice">{questionTypeLabels.multiple_choice}</option>
+              <option value="essay_text">{questionTypeLabels.essay_text}</option>
             </optgroup>
           </select>
 
@@ -456,6 +546,9 @@ export default function TeacherCreateQuestionPage() {
             <span className="text-sm font-bold text-ink">Bài học *</span>
 
             <select
+              data-validation-field="lesson"
+              aria-invalid={Boolean(fieldMessage("lesson"))}
+              aria-describedby={fieldMessage("lesson") ? "question-lesson-error" : undefined}
               value={question.lessonId ?? ""}
               onChange={(event) => {
                 const lesson = geo10Lessons.find(
@@ -473,7 +566,7 @@ export default function TeacherCreateQuestionPage() {
                     : "",
                 }));
               }}
-              className="mt-2 min-h-12 w-full rounded-xl border border-line bg-white px-4 text-sm outline-none focus:border-emerald"
+              className={`mt-2 min-h-12 w-full rounded-xl border bg-white px-4 text-sm outline-none focus:border-emerald ${fieldMessage("lesson") ? "border-red-500" : "border-line"}`}
             >
               <option value="">Chọn bài học</option>
 
@@ -490,6 +583,7 @@ export default function TeacherCreateQuestionPage() {
                 </optgroup>
               ))}
             </select>
+            {fieldMessage("lesson") && <span id="question-lesson-error" className="mt-1 block text-sm text-red-700">{fieldMessage("lesson")}</span>}
           </label>
 
           <label className="block">
@@ -523,6 +617,9 @@ export default function TeacherCreateQuestionPage() {
 
           <textarea
             ref={contentRef}
+            data-validation-field="content"
+            aria-invalid={Boolean(fieldMessage("content"))}
+            aria-describedby={fieldMessage("content") ? "question-content-error" : undefined}
             value={question.content}
             onChange={(event) =>
               setQuestion((current) => ({
@@ -536,17 +633,32 @@ export default function TeacherCreateQuestionPage() {
                 ? "Nhập thông tin chung hoặc yêu cầu xác định các ý đúng hay sai..."
                 : "Nhập nội dung câu hỏi..."
             }
-            className="mt-2 w-full rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-emerald"
+            className={`mt-2 w-full scroll-mt-28 rounded-xl border px-4 py-3 text-sm outline-none focus:border-emerald ${fieldMessage("content") ? "border-red-500" : "border-line"}`}
           />
+          {fieldMessage("content") && <span id="question-content-error" className="mt-1 block text-sm text-red-700">{fieldMessage("content")}</span>}
         </label>
 
-        <QuestionImageEditor key={`${questionId ?? "new"}-${formSequence}`} value={question.image} onChange={(image) => setQuestion((current) => ({ ...current, image }))} onProcessingChange={setImageProcessing} />
+        <div ref={mediaRef} tabIndex={-1} className={`scroll-mt-28 rounded-xl border ${fieldMessage("image") ? "border-red-500" : "border-line"}`}>
+          <button type="button" aria-expanded={mediaOpen} aria-controls="question-media" onClick={() => setMediaOpen((open) => !open)} disabled={imageProcessing} className="flex min-h-12 w-full items-center gap-3 px-4 py-3 text-left text-sm font-bold text-ink">
+            <ImageIcon aria-hidden="true" className="size-5 shrink-0 text-emerald" />
+            <span className="min-w-0 flex-1">Thêm hình ảnh / bảng số liệu (tùy chọn){question.image && <span className="ml-2 text-emerald-800">· Đã đính kèm ảnh</span>}</span>
+            <ChevronDown aria-hidden="true" className={`size-4 shrink-0 transition-transform ${mediaOpen ? "rotate-180" : ""}`} />
+          </button>
+          {fieldMessage("image") && <p role="alert" className="px-4 pb-2 text-sm text-red-700">{fieldMessage("image")}</p>}
+          {mediaOpen && <div id="question-media" className="px-3 pb-3"><QuestionImageEditor key={`${questionId ?? "new"}-${formSequence}`} value={question.image} onChange={(image) => setQuestion((current) => ({ ...current, image }))} onProcessingChange={setImageProcessing} /></div>}
+        </div>
 
-        {question.type === "short_answer" ? (
+        {question.type === "essay_text" ? (
+          <label className="block text-sm font-bold">Tiêu chí chấm (chỉ giáo viên xem)
+            <textarea data-validation-field="rubric" aria-invalid={Boolean(fieldMessage("rubric"))} value={question.rubricText ?? ""} onChange={(event) => setQuestion((current) => current.type === "essay_text" ? { ...current, rubricText: event.target.value } : current)} rows={4} maxLength={10000} className={`mt-2 block w-full rounded-xl border px-4 py-3 font-normal ${fieldMessage("rubric") ? "border-red-500" : "border-line"}`} />
+            {fieldMessage("rubric") && <span className="mt-1 block text-sm text-red-700">{fieldMessage("rubric")}</span>}
+          </label>
+        ) : question.type === "short_answer" ? (
           <fieldset className="space-y-3 rounded-xl border border-line p-4">
             <legend className="px-2 text-sm font-bold">Đáp án số *</legend>
             <label className="block text-sm font-bold">Giá trị đúng
-              <input type="text" inputMode="text" aria-label="Đáp án số đúng" value={question.correctAnswer} onChange={(event) => { const value = event.target.value; setQuestion((current) => current.type === "short_answer" ? { ...current, correctAnswer: value } : current); }} placeholder="Ví dụ: 125 hoặc -12,5" className="mt-2 block min-h-11 w-full rounded-xl border border-line px-3 font-normal sm:max-w-sm" />
+              <input type="text" inputMode="text" data-validation-field="numeric" aria-invalid={Boolean(fieldMessage("numeric"))} aria-describedby={fieldMessage("numeric") ? "question-numeric-error" : undefined} aria-label="Đáp án số đúng" value={question.correctAnswer} onChange={(event) => { const value = event.target.value; setQuestion((current) => current.type === "short_answer" ? { ...current, correctAnswer: value } : current); }} placeholder="Ví dụ: 125 hoặc -12,5" className={`mt-2 block min-h-11 w-full scroll-mt-28 rounded-xl border px-3 font-normal sm:max-w-sm ${fieldMessage("numeric") ? "border-red-500" : "border-line"}`} />
+              {fieldMessage("numeric") && <span id="question-numeric-error" className="mt-1 block text-sm text-red-700">{fieldMessage("numeric")}</span>}
             </label>
             <p className="text-sm leading-6 text-secondary">Nhận số nguyên, số âm và số thập phân. Dấu phẩy hoặc chấm đều được; không nhập đơn vị hay dấu tách hàng nghìn. Ví dụ 12,5 và 12.50 được chấm như nhau.</p>
             <p className="text-sm leading-6 text-secondary">Chấm đúng giá trị, không tự làm tròn. Nếu cần làm tròn, ghi rõ yêu cầu trong nội dung câu hỏi.</p>
@@ -558,6 +670,8 @@ export default function TeacherCreateQuestionPage() {
             <p className="mt-1 text-xs text-muted">
               Nhập các phương án và chọn một đáp án đúng. Cần ít nhất 2 phương án.
             </p>
+            {fieldMessage("correct") && <p id="question-correct-error" className="mt-2 text-sm text-red-700">{fieldMessage("correct")}</p>}
+            {fieldMessage("options") && <p className="mt-2 text-sm text-red-700">{fieldMessage("options")}</p>}
 
             <div className="mt-4 space-y-3">
               <div className="space-y-3">
@@ -569,6 +683,9 @@ export default function TeacherCreateQuestionPage() {
                     <div key={option.id} data-option-row className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 ${isCorrect ? "border-emerald-700 bg-emerald-50" : "border-line"}`}>
                       <input
                         type="radio"
+                        data-validation-field={index === 0 ? "correct" : undefined}
+                        aria-invalid={Boolean(fieldMessage("correct"))}
+                        aria-describedby={fieldMessage("correct") ? "question-correct-error" : undefined}
                         name="correctOption"
                         aria-label={`Phương án ${label} là đáp án đúng`}
                         checked={question.correctOptionId === option.id}
@@ -593,14 +710,18 @@ export default function TeacherCreateQuestionPage() {
 
                       <input
                         type="text"
+                        data-validation-field={`option:${option.id}`}
+                        aria-invalid={Boolean(fieldMessage(`option:${option.id}`))}
+                        aria-describedby={fieldMessage(`option:${option.id}`) ? `option-error-${option.id}` : undefined}
                         value={option.text}
                         onChange={(event) =>
                           updateOption(option.id, event.target.value)
                         }
                         aria-label={`Nội dung phương án ${label}`}
                         placeholder={`Nhập phương án ${label}`}
-                        className="min-h-11 min-w-0 flex-1 rounded-xl border border-line px-4 text-sm outline-none focus:border-emerald"
+                        className={`min-h-11 min-w-0 flex-1 scroll-mt-28 rounded-xl border px-4 text-sm outline-none focus:border-emerald ${fieldMessage(`option:${option.id}`) ? "border-red-500" : "border-line"}`}
                       />
+                      {fieldMessage(`option:${option.id}`) && <p id={`option-error-${option.id}`} className="w-full text-sm text-red-700">{fieldMessage(`option:${option.id}`)}</p>}
 
                       <button
                         type="button"
@@ -619,6 +740,7 @@ export default function TeacherCreateQuestionPage() {
               </div>
               <button
                 type="button"
+                data-validation-field="options"
                 onClick={addOption}
                 className="mt-3 inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-bold text-emerald hover:bg-emerald/5"
               >
@@ -691,6 +813,8 @@ export default function TeacherCreateQuestionPage() {
             <p className="mt-1 text-xs text-muted">
               Nhập các phương án và đánh dấu đáp án đúng. Cần ít nhất 2 phương án.
             </p>
+            {fieldMessage("correct") && <p id="question-correct-error" className="mt-2 text-sm text-red-700">{fieldMessage("correct")}</p>}
+            {fieldMessage("options") && <p className="mt-2 text-sm text-red-700">{fieldMessage("options")}</p>}
 
             <div className="mt-4 space-y-3">
               {question.options.map((option, index) => {
@@ -701,6 +825,9 @@ export default function TeacherCreateQuestionPage() {
                   <div key={option.id} data-option-row className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 ${isCorrect ? "border-emerald-700 bg-emerald-50" : "border-line"}`}>
                     <input
                       type="checkbox"
+                      data-validation-field={index === 0 ? "correct" : undefined}
+                      aria-invalid={Boolean(fieldMessage("correct"))}
+                      aria-describedby={fieldMessage("correct") ? "question-correct-error" : undefined}
                       checked={question.correctOptionIds.includes(option.id)}
                       onChange={() => toggleCorrectOption(option.id)}
                       aria-label={`Phương án ${label} là đáp án đúng`}
@@ -713,14 +840,18 @@ export default function TeacherCreateQuestionPage() {
 
                     <input
                       type="text"
+                      data-validation-field={`option:${option.id}`}
+                      aria-invalid={Boolean(fieldMessage(`option:${option.id}`))}
+                      aria-describedby={fieldMessage(`option:${option.id}`) ? `option-error-${option.id}` : undefined}
                       value={option.text}
                       onChange={(event) =>
                         updateOption(option.id, event.target.value)
                       }
                       aria-label={`Nội dung phương án ${label}`}
                       placeholder={`Nhập phương án ${label}`}
-                      className="min-h-11 min-w-0 flex-1 rounded-xl border border-line px-4 text-sm outline-none focus:border-emerald"
+                      className={`min-h-11 min-w-0 flex-1 scroll-mt-28 rounded-xl border px-4 text-sm outline-none focus:border-emerald ${fieldMessage(`option:${option.id}`) ? "border-red-500" : "border-line"}`}
                     />
+                    {fieldMessage(`option:${option.id}`) && <p id={`option-error-${option.id}`} className="w-full text-sm text-red-700">{fieldMessage(`option:${option.id}`)}</p>}
 
                     <button
                       type="button"
@@ -740,6 +871,7 @@ export default function TeacherCreateQuestionPage() {
 
             <button
               type="button"
+              data-validation-field="options"
               onClick={addOption}
               className="mt-3 inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-bold text-emerald hover:bg-emerald/5"
             >
@@ -753,6 +885,7 @@ export default function TeacherCreateQuestionPage() {
             <p className="mt-1 text-xs text-muted">
               Nhập ít nhất 2 ý và chọn đáp án Đúng hoặc Sai cho từng ý.
             </p>
+            {fieldMessage("statements") && <p className="mt-2 text-sm text-red-700">{fieldMessage("statements")}</p>}
 
             <div className="mt-4 space-y-4">
               {question.statements.map((statement, index) => (
@@ -780,14 +913,18 @@ export default function TeacherCreateQuestionPage() {
 
                   <textarea
                     id={`statement-${statement.id}`}
+                    data-validation-field={`statement:${statement.id}`}
+                    aria-invalid={Boolean(fieldMessage(`statement:${statement.id}`))}
+                    aria-describedby={fieldMessage(`statement:${statement.id}`) ? `statement-error-${statement.id}` : undefined}
                     value={statement.content}
                     onChange={(event) =>
                       updateStatementContent(statement.id, event.target.value)
                     }
                     rows={2}
                     placeholder={`Nhập nội dung ý ${index + 1}...`}
-                    className="mt-2 w-full rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-emerald"
+                    className={`mt-2 w-full scroll-mt-28 rounded-xl border px-4 py-3 text-sm outline-none focus:border-emerald ${fieldMessage(`statement:${statement.id}`) ? "border-red-500" : "border-line"}`}
                   />
+                  {fieldMessage(`statement:${statement.id}`) && <p id={`statement-error-${statement.id}`} className="mt-1 text-sm text-red-700">{fieldMessage(`statement:${statement.id}`)}</p>}
 
                   <div className="mt-3 flex flex-wrap items-center gap-5">
                     <span className="text-xs font-bold text-secondary">
@@ -828,6 +965,7 @@ export default function TeacherCreateQuestionPage() {
 
             <button
               type="button"
+              data-validation-field="statements"
               onClick={addStatement}
               className="mt-3 inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-bold text-emerald hover:bg-emerald/5"
             >
@@ -848,13 +986,16 @@ export default function TeacherCreateQuestionPage() {
             }
             className="size-4 accent-emerald"
           />
-          Hiển thị câu hỏi luyện tập trong bài học
+          Đánh dấu để dùng trong bài học (chưa tự công bố cho học sinh)
         </label>
 
         <label className="block">
           <span className="text-sm font-bold text-ink">Giải thích đáp án</span>
 
           <textarea
+            data-validation-field="explanation"
+            aria-invalid={Boolean(fieldMessage("explanation"))}
+            aria-describedby={fieldMessage("explanation") ? "question-explanation-error" : undefined}
             value={question.explanation ?? ""}
             onChange={(event) =>
               setQuestion((current) => ({
@@ -864,8 +1005,9 @@ export default function TeacherCreateQuestionPage() {
             }
             rows={3}
             placeholder="Không bắt buộc"
-            className="mt-2 w-full rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-emerald"
+            className={`mt-2 w-full scroll-mt-28 rounded-xl border px-4 py-3 text-sm outline-none focus:border-emerald ${fieldMessage("explanation") ? "border-red-500" : "border-line"}`}
           />
+          {fieldMessage("explanation") && <span id="question-explanation-error" className="mt-1 block text-sm text-red-700">{fieldMessage("explanation")}</span>}
         </label>
 
         {error && (
@@ -880,12 +1022,13 @@ export default function TeacherCreateQuestionPage() {
         <div className="flex flex-wrap gap-3">
           <button
             type="submit"
+            disabled={saving}
             className={`min-h-12 rounded-full px-6 text-sm font-bold ${questionId ? "bg-emerald text-white hover:bg-emerald/90" : "border border-line bg-white text-ink hover:bg-slate-50"}`}
           >
             {questionId ? "Lưu thay đổi" : "Lưu câu hỏi"}
           </button>
 
-          {!questionId && <button type="submit" name="intent" value="continue" className="min-h-12 rounded-full bg-emerald px-6 text-sm font-bold text-white hover:bg-emerald/90">Lưu và thêm câu mới</button>}
+          {!questionId && <button type="submit" name="intent" value="continue" disabled={saving} className="min-h-12 rounded-full bg-emerald px-6 text-sm font-bold text-white hover:bg-emerald/90 disabled:opacity-50">Lưu và thêm câu mới</button>}
           <Link
             to={backTo}
             className="inline-flex min-h-12 items-center rounded-full border border-line px-6 text-sm font-bold text-ink hover:bg-slate-50"

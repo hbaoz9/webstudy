@@ -1,213 +1,109 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useAuth } from "./AuthContext";
+import { ApiError } from "../service/api/client";
+import type { QuestionBankInput, QuestionInputV2, QuestionV2 } from "../types/question";
+import { createTeacherQuestion, deleteTeacherQuestion, getTeacherQuestion, listTeacherQuestions, updateTeacherQuestion, type TeacherQuestion } from "../service/api/questions";
 
-import type {
-  AnswerOption,
-  Question,
-  QuestionInputV2,
-  QuestionV2,
-} from "../types/question";
-const LEGACY_STORAGE_KEY = "webstudy-geo10-teacher-questions-v1";
-
-const STORAGE_KEY = "webstudy-geo10-teacher-questions-v2";
-const LEGACY_ANSWER_OPTIONS: AnswerOption[] = ["A", "B", "C", "D"];
-
-function migrateQuestionToV2(question: Question): QuestionV2 {
-  const options = LEGACY_ANSWER_OPTIONS.map((option) => ({
-    id: `${question.id}-option-${option.toLowerCase()}`,
-    text: question.options[option],
-  }));
-
-  return {
-    id: question.id,
-    type: "single_choice",
-
-    content: question.content,
-    difficulty: question.difficulty,
-
-    options,
-    correctOptionId: `${question.id}-option-${question.correctOption.toLowerCase()}`,
-
-    explanation: question.explanation,
-
-    lessonId: question.lessonId,
-    chapter: question.chapter,
-    showInLesson: question.showInLesson,
-
-    createdAt: question.createdAt,
-    updatedAt: question.updatedAt,
-  };
-}
-
+type ImportResult = { imported: string[]; failedAt: number | null; error?: string; uncertain?: boolean };
 type TeacherQuestionsContextValue = {
   questions: QuestionV2[];
-  addQuestion: (input: QuestionInputV2) => string | null;
-  importQuestions: (inputs: QuestionInputV2[]) => string[] | null;
-  updateQuestion: (id: string, changes: QuestionInputV2) => void;
-  deleteQuestion: (id: string) => void;
+  bankQuestions: TeacherQuestion[];
+  loading: boolean;
+  ready: boolean;
+  error: string;
+  revision: number;
+  reload: () => Promise<void>;
+  getQuestion: (id: string) => Promise<TeacherQuestion>;
+  addQuestion: (input: QuestionBankInput) => Promise<TeacherQuestion>;
+  updateQuestion: (id: string, input: QuestionBankInput, expectedVersion: number) => Promise<TeacherQuestion>;
+  deleteQuestion: (id: string, expectedVersion: number) => Promise<void>;
+  importQuestions: (inputs: QuestionInputV2[]) => Promise<ImportResult>;
 };
 
-const TeacherQuestionsContext = createContext<
-  TeacherQuestionsContextValue | undefined
->(undefined);
+const TeacherQuestionsContext = createContext<TeacherQuestionsContextValue | undefined>(undefined);
 
-function loadLegacyQuestions(): Question[] {
-  const saved = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-  if (saved === null) return [];
-  const parsed: unknown = JSON.parse(saved);
-  if (!Array.isArray(parsed)) throw new Error("Dữ liệu ngân hàng V1 không phải mảng.");
-  return parsed as Question[];
-}
+export function TeacherQuestionsProvider({ children }: { children: ReactNode }) {
+  const { session } = useAuth();
+  const teacherId = session?.role === "teacher" && session.teacherVerificationStatus === "verified" ? session.userId : null;
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const [bankQuestions, setBankQuestions] = useState<TeacherQuestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
+  const generation = useRef(0);
+  const activeTeacher = useRef(teacherId);
+  activeTeacher.current = teacherId;
 
-function loadQuestionsV2(): QuestionV2[] | null {
-  try {
-    const savedV2 = window.localStorage.getItem(STORAGE_KEY);
-    if (savedV2 !== null) {
-      const parsed: unknown = JSON.parse(savedV2);
-      if (!Array.isArray(parsed)) throw new Error("Dữ liệu ngân hàng V2 không phải mảng.");
-      return parsed as QuestionV2[];
+  const reload = useCallback(async () => {
+    const current = ++generation.current;
+    if (!teacherId) {
+      setBankQuestions([]); setLoadedFor(null); setLoading(false); setError("");
+      return;
     }
-    return loadLegacyQuestions().map(migrateQuestionToV2);
-  } catch {
-    // Giữ nguyên bản lưu lỗi để còn có thể khôi phục, không tự thay bằng [].
-    return null;
-  }
-}
-
-export function TeacherQuestionsProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const [initialQuestions] = useState(loadQuestionsV2);
-  const hasStorageReadError = initialQuestions === null;
-  const [questions, setQuestions] = useState<QuestionV2[]>(() => initialQuestions ?? []);
-  const latestQuestions = useRef(questions);
-  latestQuestions.current = questions;
-  const [saveFailed, setSaveFailed] = useState(false);
-  const [saveAttempt, setSaveAttempt] = useState(0);
-  useEffect(() => {
-    if (hasStorageReadError) return;
+    setLoading(true); setError("");
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(questions));
-      setSaveFailed(false);
-    } catch (error) {
-      console.error("Không thể lưu ngân hàng câu hỏi.", error);
-      setSaveFailed(true);
+      const first = await listTeacherQuestions({ page: 1, perPage: 100 });
+      const all = [...first.data];
+      for (let page = 2; page <= first.meta.last_page; page++) {
+        const next = await listTeacherQuestions({ page, perPage: 100 });
+        all.push(...next.data);
+      }
+      if (all.length !== first.meta.total || new Set(all.map((item) => item.id)).size !== all.length) {
+        throw new Error("Danh sách câu hỏi đã thay đổi khi đang tải. Vui lòng thử lại.");
+      }
+      if (current !== generation.current) return;
+      setBankQuestions(all); setLoadedFor(teacherId);
+    } catch (cause) {
+      if (current !== generation.current) return;
+      setBankQuestions([]); setLoadedFor(null);
+      setError(cause instanceof Error ? cause.message : "Không tải được ngân hàng câu hỏi.");
+    } finally {
+      if (current === generation.current) setLoading(false);
     }
-  }, [questions, saveAttempt, hasStorageReadError]);
+  }, [teacherId]);
 
-  const addQuestion = (input: QuestionInputV2) => {
-    const now = new Date().toISOString();
+  useEffect(() => { void reload(); return () => { ++generation.current; }; }, [reload]);
 
-    const question: QuestionV2 = {
-      ...input,
-      id: window.crypto.randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const next = [question, ...latestQuestions.current];
-    try {
-      // Chỉ làm trống form soạn tiếp khi câu mới đã ghi được xuống bộ nhớ.
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch (error) {
-      console.error("Không thể lưu ngân hàng câu hỏi.", error);
-      setSaveFailed(true);
-      return null;
+  const getQuestion = useCallback((id: string) => getTeacherQuestion(id), []);
+  const addQuestion = useCallback(async (input: QuestionBankInput) => {
+    const created = await createTeacherQuestion(input);
+    setRevision((value) => value + 1); void reload();
+    return created;
+  }, [reload]);
+  const updateQuestion = useCallback(async (id: string, input: QuestionBankInput, expectedVersion: number) => {
+    const updated = await updateTeacherQuestion(id, input, expectedVersion);
+    setRevision((value) => value + 1); void reload();
+    return updated;
+  }, [reload]);
+  const deleteQuestion = useCallback(async (id: string, expectedVersion: number) => {
+    await deleteTeacherQuestion(id, expectedVersion);
+    setRevision((value) => value + 1); void reload();
+  }, [reload]);
+  const importQuestions = useCallback(async (inputs: QuestionInputV2[]): Promise<ImportResult> => {
+    const imported: string[] = [];
+    const owner = teacherId;
+    for (let index = 0; index < inputs.length; index++) {
+      if (!owner || activeTeacher.current !== owner) return { imported, failedAt: index, error: "Phiên giáo viên đã thay đổi. Dừng nhập để tránh lưu vào tài khoản khác.", uncertain: false };
+      try { imported.push((await createTeacherQuestion(inputs[index])).id); }
+      catch (cause) {
+        if (imported.length) { setRevision((value) => value + 1); void reload(); }
+        return { imported, failedAt: index, error: cause instanceof Error ? cause.message : "Không lưu được câu hỏi.", uncertain: !(cause instanceof ApiError) || cause.status === undefined || cause.status >= 500 };
+      }
     }
-    latestQuestions.current = next;
-    setQuestions(next);
-    setSaveFailed(false);
-    return question.id;
-  };
+    if (imported.length) { setRevision((value) => value + 1); void reload(); }
+    return { imported, failedAt: null };
+  }, [reload, teacherId]);
 
-  const updateQuestion = (id: string, changes: QuestionInputV2) => {
-    setQuestions((current) =>
-      current.map((question) => {
-        if (question.id !== id) {
-          return question;
-        }
-
-        if (question.type !== changes.type) {
-          return question;
-        }
-
-        return {
-          ...changes,
-          id: question.id,
-          createdAt: question.createdAt,
-          updatedAt: new Date().toISOString(),
-        };
-      }),
-    );
-  };
-
-  // Nhập cả nhóm trong một lần ghi: lỗi bộ nhớ không để lại nhóm nhập dở.
-  const importQuestions = (inputs: QuestionInputV2[]): string[] | null => {
-    if (!inputs.length || inputs.length > 500) return null;
-    const now = Date.now();
-    const imported: QuestionV2[] = inputs.map((input, index) => ({
-      ...input, id: window.crypto.randomUUID(),
-      createdAt: new Date(now - index).toISOString(), updatedAt: new Date(now).toISOString(),
-    }));
-    const next = [...imported, ...latestQuestions.current];
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch (error) {
-      console.error("Không thể lưu ngân hàng câu hỏi.", error);
-      setSaveFailed(true);
-      return null;
-    }
-    latestQuestions.current = next;
-    setQuestions(next);
-    setSaveFailed(false);
-    return imported.map((question) => question.id);
-  };
-
-  const deleteQuestion = (id: string) => {
-    setQuestions((current) => current.filter((question) => question.id !== id));
-  };
-
-  if (hasStorageReadError) return <main role="alert" className="mx-auto my-8 w-[calc(100%-2rem)] max-w-xl rounded-2xl border border-red-200 bg-white p-5 text-ink">
-    <h1 className="text-lg font-bold">Không đọc được ngân hàng câu hỏi</h1>
-    <p className="mt-3 text-sm leading-6 text-secondary">Bản lưu cũ được giữ nguyên để có thể khôi phục. Hãy thử tải lại; nếu lỗi vẫn còn, nhờ hỗ trợ kiểm tra dữ liệu trên trình duyệt.</p>
-    <button type="button" onClick={() => window.location.reload()} className="mt-4 min-h-11 rounded-xl border border-line px-4 text-sm font-bold">Thử tải lại</button>
-  </main>;
-
-  return (
-    <TeacherQuestionsContext.Provider
-      value={{
-        questions,
-        addQuestion,
-        importQuestions,
-        updateQuestion,
-        deleteQuestion,
-      }}
-    >
-      {saveFailed && <div role="alert" className="m-5 space-y-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <p>Chưa lưu được ngân hàng câu hỏi trên trình duyệt. Đừng tải lại hoặc đóng trang. Có thể bộ nhớ đã đầy; thử dùng ảnh nhỏ hơn hoặc bỏ ảnh vừa thêm.</p>
-        <button type="button" onClick={() => setSaveAttempt((current) => current + 1)} className="min-h-11 rounded-xl border border-red-300 bg-white px-4 font-bold">Thử lưu lại ngân hàng</button>
-      </div>}
-      {children}
-    </TeacherQuestionsContext.Provider>
-  );
+  const visible = loadedFor === teacherId && teacherId ? bankQuestions : [];
+  // The assignment prototype supports only five objective question types.
+  const questions = visible.filter((question): question is TeacherQuestion & QuestionV2 => question.type !== "essay_text");
+  return <TeacherQuestionsContext.Provider value={{ questions, bankQuestions: visible, loading, ready: !!teacherId && loadedFor === teacherId, error, revision, reload, getQuestion, addQuestion, updateQuestion, deleteQuestion, importQuestions }}>
+    {children}
+  </TeacherQuestionsContext.Provider>;
 }
 
 export function useTeacherQuestions() {
   const context = useContext(TeacherQuestionsContext);
-
-  if (!context) {
-    throw new Error(
-      "useTeacherQuestions phải nằm trong TeacherQuestionsProvider.",
-    );
-  }
-
+  if (!context) throw new Error("useTeacherQuestions phải nằm trong TeacherQuestionsProvider.");
   return context;
 }

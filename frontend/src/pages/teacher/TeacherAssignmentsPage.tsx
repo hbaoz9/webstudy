@@ -138,7 +138,7 @@ export default function TeacherAssignmentsPage() {
   const [now, setNow] = useState(() => Date.now());
   const [lessonId, setLessonId] = useState("");
 
-  const { questions } = useTeacherQuestions();
+  const { questions, ready: bankReady, loading: bankLoading, error: bankError, reload: reloadBank } = useTeacherQuestions();
 
   const {
     assignments,
@@ -207,7 +207,7 @@ export default function TeacherAssignmentsPage() {
   const importedEntry = useRef<string | null>(null);
   const [bankSelectionNotice, setBankSelectionNotice] = useState("");
   useEffect(() => {
-    if (!creating || importedEntry.current === location.key) return;
+    if (!creating || !bankReady || importedEntry.current === location.key) return;
     const selection = readBankSelection(location.state);
     if (!selection) {
       setBankSelectionNotice("");
@@ -233,7 +233,7 @@ export default function TeacherAssignmentsPage() {
     setBankSelectionNotice(
       `Đã nhận ${available.length} câu từ ngân hàng. Bạn có thể xem lại, đổi thứ tự hoặc bỏ chọn ở bước Chọn câu hỏi.${missing ? ` Có ${missing} câu không còn trong ngân hàng nên không được thêm.` : ""}`,
     );
-  }, [creating, location.key, location.state, questions]);
+  }, [creating, bankReady, location.key, location.state, questions]);
 
   // Hạn nộp và lỗi khi chốt bài tập
   const [deadlines, setDeadlines] = useState<Record<string, string>>({});
@@ -1280,7 +1280,7 @@ export default function TeacherAssignmentsPage() {
                     className="min-h-11 w-full min-w-0 rounded-xl border border-line bg-white px-2 text-sm"
                   >
                     <option value="">Tất cả dạng</option>
-                    {Object.entries(QUESTION_TYPES).map(([value, label]) => (
+                    {Object.entries(QUESTION_TYPES).filter(([value]) => value !== "essay_text").map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
                       </option>
@@ -1302,6 +1302,7 @@ export default function TeacherAssignmentsPage() {
                     ))}
                   </select>
                 </div>
+                {!bankReady && <div role={bankError ? "alert" : "status"} className="rounded-xl border border-line p-3 text-sm">{bankError || (bankLoading ? "Đang tải ngân hàng câu hỏi…" : "Đang chuẩn bị ngân hàng câu hỏi…")}{bankError && <button type="button" onClick={() => { void reloadBank(); }} className="ml-3 font-bold text-emerald-800">Thử lại</button>}</div>}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-secondary">
                     {matchingQuestions.length} câu phù hợp
@@ -1309,6 +1310,7 @@ export default function TeacherAssignmentsPage() {
                   <button
                     type="button"
                     onClick={chooseRandomQuestions}
+                    disabled={!bankReady}
                     className="min-h-11 rounded-xl border border-line px-3 text-sm font-bold"
                   >
                     + Chọn ngẫu nhiên tối đa 10 câu
@@ -1343,7 +1345,7 @@ export default function TeacherAssignmentsPage() {
                     </label>
                   ))}
                 </div>
-                {!matchingQuestions.length && (
+                {bankReady && !matchingQuestions.length && (
                   <div className="space-y-3 rounded-xl border border-dashed border-line p-4 text-sm">
                     <p>
                       {questions.length

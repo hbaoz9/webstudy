@@ -1,7 +1,7 @@
 import { normalizeNumericAnswer } from "./assignmentQuestion";
-import type { QuestionInputV2 as QuestionFormInput, QuestionV2 } from "../types/question";
+import type { QuestionBankInput as QuestionFormInput, QuestionBankQuestion } from "../types/question";
 
-export function toQuestionInput(savedQuestion: QuestionV2): QuestionFormInput | null {
+export function toQuestionInput(savedQuestion: QuestionBankQuestion): QuestionFormInput | null {
   const commonFields = {
     chapter: savedQuestion.chapter ?? "",
     difficulty: savedQuestion.difficulty,
@@ -11,6 +11,8 @@ export function toQuestionInput(savedQuestion: QuestionV2): QuestionFormInput | 
     lessonId: savedQuestion.lessonId ?? "",
     showInLesson: savedQuestion.showInLesson ?? false,
   };
+
+  if (savedQuestion.type === "essay_text") return { ...commonFields, type: "essay_text", rubricText: savedQuestion.rubricText ?? "" };
 
   if (savedQuestion.type === "short_answer") return { ...commonFields, type: "short_answer", correctAnswer: savedQuestion.correctAnswer };
 
@@ -62,20 +64,30 @@ export function toQuestionInput(savedQuestion: QuestionV2): QuestionFormInput | 
 
 export type QuestionFormValidationResult =
   | { ok: true; input: QuestionFormInput }
-  | { ok: false; error: string };
+  | { ok: false; error: string; field: string };
 
 export function validateQuestionInput(
   question: QuestionFormInput,
   lessons: ReadonlyArray<{ id: string }>,
 ): QuestionFormValidationResult {
   if (!lessons.some((lesson) => lesson.id === question.lessonId)) {
-    return { ok: false, error: "Vui lòng chọn bài học cho câu hỏi." };
+    return { ok: false, error: "Vui lòng chọn bài học cho câu hỏi.", field: "lesson" };
+  }
+
+  if (Array.from(question.content.trim()).length > 5000) {
+    return { ok: false, error: "Nội dung câu hỏi tối đa 5.000 ký tự.", field: "content" };
+  }
+
+  if (question.type === "essay_text") {
+    if (!question.content.trim()) return { ok: false, error: "Vui lòng nhập nội dung câu hỏi.", field: "content" };
+    if ((question.rubricText?.length ?? 0) > 10000) return { ok: false, error: "Tiêu chí chấm tối đa 10.000 ký tự.", field: "rubric" };
+    return { ok: true, input: { ...question, content: question.content.trim(), rubricText: question.rubricText?.trim() ?? "" } };
   }
 
   if (question.type === "short_answer") {
-    if (!question.content.trim()) { return { ok: false, error: "Vui lòng nhập nội dung câu hỏi." }; }
+    if (!question.content.trim()) { return { ok: false, error: "Vui lòng nhập nội dung câu hỏi.", field: "content" }; }
     const correctAnswer = normalizeNumericAnswer(question.correctAnswer);
-    if (correctAnswer === null) { return { ok: false, error: "Nhập đáp án là một số, ví dụ 125, -2 hoặc 12,5. Không kèm đơn vị hay dấu tách hàng nghìn." }; }
+    if (correctAnswer === null) { return { ok: false, error: "Nhập đáp án là một số, ví dụ 125, -2 hoặc 12,5. Không kèm đơn vị hay dấu tách hàng nghìn.", field: "numeric" }; }
     return { ok: true, input: { ...question, content: question.content.trim(), correctAnswer, explanation: question.explanation?.trim() } };
   }
 
@@ -95,11 +107,11 @@ export function validateQuestionInput(
     };
 
     if (!cleanedQuestion.content) {
-      return { ok: false, error: "Vui lòng nhập nội dung chung hoặc yêu cầu câu hỏi." };
+      return { ok: false, error: "Vui lòng nhập nội dung chung hoặc yêu cầu câu hỏi.", field: "content" };
     }
 
     if (cleanedQuestion.statements.length < 2) {
-      return { ok: false, error: "Câu hỏi phải có ít nhất 2 ý." };
+      return { ok: false, error: "Câu hỏi phải có ít nhất 2 ý.", field: "statements" };
     }
 
     const emptyStatementIndex = cleanedQuestion.statements.findIndex(
@@ -107,7 +119,7 @@ export function validateQuestionInput(
     );
 
     if (emptyStatementIndex !== -1) {
-      return { ok: false, error: `Vui lòng nhập nội dung ý ${emptyStatementIndex + 1}.` };
+      return { ok: false, error: `Ý ${emptyStatementIndex + 1} chưa có nội dung.`, field: `statement:${cleanedQuestion.statements[emptyStatementIndex].id}` };
     }
 
     return { ok: true, input: cleanedQuestion };
@@ -130,23 +142,20 @@ export function validateQuestionInput(
     };
 
     if (!cleanedQuestion.content) {
-      return { ok: false, error: "Vui lòng nhập nội dung câu hỏi." };
+      return { ok: false, error: "Vui lòng nhập nội dung câu hỏi.", field: "content" };
     }
 
     if (cleanedQuestion.options.length < 2) {
-      return { ok: false, error: "Câu hỏi phải có ít nhất 2 phương án." };
+      return { ok: false, error: "Câu hỏi phải có ít nhất 2 phương án.", field: "options" };
     }
 
-    const hasEmptyOption = cleanedQuestion.options.some(
-      (option) => !option.text,
-    );
-
-    if (hasEmptyOption) {
-      return { ok: false, error: "Vui lòng nhập đầy đủ nội dung các phương án." };
+    const emptyOptionIndex = cleanedQuestion.options.findIndex((option) => !option.text);
+    if (emptyOptionIndex !== -1) {
+      return { ok: false, error: `Phương án ${String.fromCharCode(65 + emptyOptionIndex)} chưa có nội dung.`, field: `option:${cleanedQuestion.options[emptyOptionIndex].id}` };
     }
 
     if (cleanedQuestion.correctOptionIds.length === 0) {
-      return { ok: false, error: "Vui lòng chọn ít nhất một đáp án đúng." };
+      return { ok: false, error: "Vui lòng chọn đáp án đúng.", field: "correct" };
     }
 
     const hasValidCorrectOptions = cleanedQuestion.correctOptionIds.every(
@@ -155,7 +164,7 @@ export function validateQuestionInput(
     );
 
     if (!hasValidCorrectOptions) {
-      return { ok: false, error: "Có đáp án đúng không còn tồn tại. Vui lòng chọn lại đáp án." };
+      return { ok: false, error: "Có đáp án đúng không còn tồn tại. Vui lòng chọn lại đáp án.", field: "correct" };
     }
 
     return { ok: true, input: cleanedQuestion };
@@ -171,7 +180,7 @@ export function validateQuestionInput(
     };
 
     if (!cleanedQuestion.content) {
-      return { ok: false, error: "Vui lòng nhập nội dung câu hỏi." };
+      return { ok: false, error: "Vui lòng nhập nội dung câu hỏi.", field: "content" };
     }
 
     return { ok: true, input: cleanedQuestion };
@@ -195,19 +204,16 @@ export function validateQuestionInput(
   };
 
   if (!cleanedQuestion.content) {
-    return { ok: false, error: "Vui lòng nhập nội dung câu hỏi." };
+    return { ok: false, error: "Vui lòng nhập nội dung câu hỏi.", field: "content" };
   }
 
   if (cleanedQuestion.options.length < 2) {
-    return { ok: false, error: "Câu hỏi phải có ít nhất 2 phương án." };
+    return { ok: false, error: "Câu hỏi phải có ít nhất 2 phương án.", field: "options" };
   }
 
-  const hasEmptyOption = cleanedQuestion.options.some(
-    (option) => !option.text,
-  );
-
-  if (hasEmptyOption) {
-    return { ok: false, error: "Vui lòng nhập đầy đủ nội dung các phương án." };
+  const emptyOptionIndex = cleanedQuestion.options.findIndex((option) => !option.text);
+  if (emptyOptionIndex !== -1) {
+    return { ok: false, error: `Phương án ${String.fromCharCode(65 + emptyOptionIndex)} chưa có nội dung.`, field: `option:${cleanedQuestion.options[emptyOptionIndex].id}` };
   }
 
   const hasValidCorrectOption = cleanedQuestion.options.some(
@@ -215,7 +221,7 @@ export function validateQuestionInput(
   );
 
   if (!hasValidCorrectOption) {
-    return { ok: false, error: "Vui lòng chọn một đáp án đúng." };
+    return { ok: false, error: "Vui lòng chọn đáp án đúng.", field: "correct" };
   }
 
   return { ok: true, input: cleanedQuestion };

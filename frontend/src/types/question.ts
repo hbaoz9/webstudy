@@ -10,14 +10,16 @@ export type QuestionType =
   | "multiple_choice"
   | "true_false_group"
   | "short_answer";
+export type QuestionBankType = QuestionType | "essay_text";
 
 // Teacher-facing terminology; stored type values and grading stay unchanged.
-export const questionTypeLabels: Record<QuestionType, string> = {
+export const questionTypeLabels: Record<QuestionBankType, string> = {
   single_choice: "Trắc nghiệm nhiều lựa chọn (chọn 1)",
   true_false_group: "Trắc nghiệm Đúng/Sai (nhiều ý)",
   short_answer: "Trắc nghiệm trả lời ngắn (điền số)",
   true_false: "Đúng/Sai (một nhận định)",
   multiple_choice: "Chọn nhiều đáp án đúng",
+  essay_text: "Tự luận (nhập văn bản)",
 };
 
 export type QuestionChoiceOption = {
@@ -58,7 +60,15 @@ type BaseQuestionV2 = {
 
   createdAt: string;
   updatedAt: string;
+  version?: number;
+  chapterId?: string;
 };
+
+export type EssayTextQuestion = Omit<BaseQuestionV2, "type"> & {
+  type: "essay_text";
+  rubricText?: string | null;
+};
+export type QuestionBankQuestion = QuestionV2 | EssayTextQuestion;
 
 export type SingleChoiceQuestionV2 = BaseQuestionV2 & {
   type: "single_choice";
@@ -98,13 +108,15 @@ export type QuestionV2 =
   | TrueFalseGroupQuestionV2
   | ShortAnswerQuestionV2;
 
-type QuestionSystemField = "id" | "createdAt" | "updatedAt";
+type QuestionSystemField = "id" | "createdAt" | "updatedAt" | "version" | "chapterId";
 
 type QuestionInputFrom<T> = T extends QuestionV2
   ? Omit<T, QuestionSystemField>
   : never;
 
 export type QuestionInputV2 = QuestionInputFrom<QuestionV2>;
+export type EssayTextQuestionInput = Omit<EssayTextQuestion, QuestionSystemField>;
+export type QuestionBankInput = QuestionInputV2 | EssayTextQuestionInput;
 
 export type AnswerOption = "A" | "B" | "C" | "D";
 
