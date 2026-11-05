@@ -30,6 +30,7 @@ const TeacherQuestionsPage = lazy(() => import("../pages/teacher/TeacherQuestion
 const TeacherCreateQuestionPage = lazy(() => import("../pages/teacher/TeacherCreateQuestionPage"));
 
 const TeacherAssignmentsPage = lazy(() => import("../pages/teacher/TeacherAssignmentsPage"));
+const TeacherAssessmentsPage = lazy(() => import("../pages/teacher/TeacherAssessmentsPage"));
 const TeacherAssignmentDetailPage = lazy(() => import("../pages/teacher/TeacherAssignmentDetailPage"));
 
 const TeacherVideosPage = lazy(() => import("../pages/teacher/TeacherVideosPage"));
@@ -138,6 +139,8 @@ export default function AppRoutes() {
           />
 
           <Route path="assignments" element={<TeacherAssignmentsPage />} />
+          <Route path="assessments" element={<TeacherAssessmentsPage />} />
+          <Route path="assessments/:assessmentId" element={<TeacherAssessmentsPage />} />
           <Route path="assignments/new" element={<TeacherAssignmentsPage />} />
           <Route
             path="assignments/:assignmentId"

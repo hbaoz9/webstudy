@@ -53,6 +53,11 @@ const contentNavigationItems = [
 
 const activityNavigationItems = [
   {
+    label: "Bộ đề đánh giá",
+    path: "/teacher/assessments",
+    icon: ClipboardList,
+  },
+  {
     label: "Bài tập & Kiểm tra",
     path: "/teacher/assignments",
     icon: ClipboardList,

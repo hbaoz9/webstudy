@@ -62,6 +62,7 @@ export async function apiRequest<T>(
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "GET",
   body?: unknown,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  extraHeaders: Record<string, string> = {},
 ): Promise<T> {
   const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const mutation = method !== "GET";
@@ -74,6 +75,7 @@ export async function apiRequest<T>(
       Accept: "application/json",
       ...(mutation ? { "X-XSRF-TOKEN": csrfToken() ?? "" } : {}),
       ...(mutation && !formData ? { "Content-Type": "application/json" } : {}),
+      ...extraHeaders,
     },
     ...(body === undefined ? {} : { body: formData ? body as FormData : JSON.stringify(body) }),
   }, timeoutMs);

@@ -6,6 +6,7 @@ use App\Http\Controllers\StudentLessonController;
 use App\Http\Controllers\TeacherClassroomController;
 use App\Http\Controllers\TeacherLessonController;
 use App\Http\Controllers\TeacherQuestionBankController;
+use App\Http\Controllers\TeacherAssessmentController;
 use App\Http\Controllers\TeacherVerificationController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +26,19 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('{question}', [TeacherQuestionBankController::class, 'show']);
         Route::put('{question}', [TeacherQuestionBankController::class, 'update']);
         Route::delete('{question}', [TeacherQuestionBankController::class, 'destroy']);
+    });
+
+    Route::middleware('teacher.verified')->group(function (): void {
+        Route::get('teacher/assessments', [TeacherAssessmentController::class, 'index']);
+        Route::post('teacher/assessments', [TeacherAssessmentController::class, 'store']);
+        Route::get('teacher/assessments/{assessment}', [TeacherAssessmentController::class, 'show']);
+        Route::patch('teacher/assessments/{assessment}', [TeacherAssessmentController::class, 'update']);
+        Route::delete('teacher/assessments/{assessment}', [TeacherAssessmentController::class, 'destroy']);
+        Route::get('teacher/assessments/{assessment}/revisions', [TeacherAssessmentController::class, 'revisions']);
+        Route::post('teacher/assessments/{assessment}/revisions', [TeacherAssessmentController::class, 'createRevision']);
+        Route::get('teacher/revisions/{revision}', [TeacherAssessmentController::class, 'showRevision']);
+        Route::put('teacher/revisions/{revision}/draft', [TeacherAssessmentController::class, 'saveDraft']);
+        Route::post('teacher/revisions/{revision}/publish', [TeacherAssessmentController::class, 'publish']);
     });
 
     Route::middleware('teacher.verified')->prefix('teacher/lessons')->group(function (): void {
