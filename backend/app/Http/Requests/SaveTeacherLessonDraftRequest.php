@@ -4,13 +4,14 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
+use Illuminate\Validation\Rule;
 
 class SaveTeacherLessonDraftRequest extends FormRequest
 {
     public function rules(): array
     {
         return [
-            'content' => ['required', 'array:lessonId,objectives,keyPoints,explanation,explanationFormat,sections,status,updatedAt,diagramLayout,diagramDisplay'],
+            'content' => ['required', 'array:lessonId,objectives,keyPoints,explanation,explanationFormat,sections,status,updatedAt,diagramLayout,diagramDisplay,simulations'],
             'content.lessonId' => ['sometimes', 'string', 'max:32'],
             'content.objectives' => ['present', 'array', 'max:100'],
             'content.objectives.*' => ['string', 'max:2000'],
@@ -28,6 +29,11 @@ class SaveTeacherLessonDraftRequest extends FormRequest
             'content.sections.*.imageUrl' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'content.sections.*.videoUrl' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'content.sections.*.imageMode' => ['sometimes', 'in:static,drag_drop'],
+            'content.simulations' => ['sometimes', 'array', 'max:20'],
+            'content.simulations.*' => ['required', 'array:id,modelId,observationGuide'],
+            'content.simulations.*.id' => ['required', 'string', 'max:100', 'distinct'],
+            'content.simulations.*.modelId' => ['required', 'string', Rule::in(config('simulations.models')), 'distinct'],
+            'content.simulations.*.observationGuide' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'content.diagramLayout' => ['sometimes', 'in:mindMap,logicalStructure,organizationStructure'],
             'content.diagramDisplay' => ['sometimes', 'array:source,infographicId'],
             'content.diagramDisplay.source' => ['required_with:content.diagramDisplay', 'in:auto,uploaded'],

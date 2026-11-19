@@ -81,6 +81,22 @@ describe("Teacher Lessons server integration", () => {
     expect(mocks.withdraw).toHaveBeenCalledTimes(1);
   });
 
+  it("saves an attached simulation reference and guide through the lesson draft API", async () => {
+    await renderPage();
+    await act(async () => { button("Thêm học liệu → Mô phỏng 2D/3D").click(); });
+    await act(async () => { button("Thêm vào bài").click(); });
+    const guide = document.querySelector<HTMLTextAreaElement>('textarea[id^="simulation-guide-"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(guide, "Quan sát trục quay");
+      guide.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => { button("Lưu nháp").click(); });
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    expect(mocks.save.mock.calls[0][1].simulations).toEqual([
+      expect.objectContaining({ modelId: "earth-rotation", observationGuide: "Quan sát trục quay" }),
+    ]);
+  });
+
   it("never reads old local content as a server lesson when API fails", async () => {
     localStorage.setItem("webstudy-v1-geo10-lesson-content", JSON.stringify({ "geo10-kn-b07": content("Local only") }));
     mocks.getLessons.mockRejectedValueOnce(new Error("Server offline"));

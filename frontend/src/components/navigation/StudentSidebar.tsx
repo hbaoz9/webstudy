@@ -4,6 +4,8 @@ import { Link, NavLink } from "react-router-dom";
 import {
   BookOpen,
   ClipboardList,
+  Box,
+  Gamepad2,
   Globe2,
   GraduationCap,
   Image,
@@ -52,6 +54,8 @@ const navigationItems = [
     path: "/student/assessments",
     icon: ClipboardList,
   },
+  { label: "Trò chơi Địa lí", path: "/student/games", icon: Gamepad2 },
+  { label: "Phòng lab 3D", path: "/student/3d-lab", icon: Box },
 ];
 
 export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarProps) {

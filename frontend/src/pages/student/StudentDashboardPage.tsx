@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, BookOpen, GraduationCap } from "lucide-react";
+import { ArrowRight, BookOpen, Box, Gamepad2, GraduationCap } from "lucide-react";
 import { RegistrationNotice } from "../../components/common/RegistrationNotice";
 import { StudentNotificationsPanel } from "../../components/student/StudentNotificationsPanel";
 import { StudentAssessmentWidget } from "../../components/student/StudentAssessmentWidget";
@@ -86,6 +86,24 @@ function DashboardSession({ name, isStudent }: { name: string; isStudent: boolea
     </header>
     <StudentAssessmentWidget />
     <StudentNotificationsPanel />
+    <section aria-labelledby="student-explore-heading" className="space-y-3">
+      <div>
+        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald">Khám phá thêm</p>
+        <h2 id="student-explore-heading" className="mt-1 text-xl font-extrabold text-ink">Học Địa lí bằng tương tác</h2>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link to="/student/games" className="group flex min-h-28 items-center gap-4 rounded-3xl border border-line bg-white p-5 shadow-card transition hover:border-emerald/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald">
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-700"><Gamepad2 className="size-6" /></span>
+          <span className="min-w-0 flex-1"><strong className="block text-base text-ink">Trò chơi Địa lí</strong><span className="mt-1 block text-sm text-secondary">Luyện kiến thức qua 4 trò chơi.</span></span>
+          <ArrowRight className="size-4 shrink-0 text-emerald transition group-hover:translate-x-1 motion-reduce:transform-none" />
+        </Link>
+        <Link to="/student/3d-lab" className="group flex min-h-28 items-center gap-4 rounded-3xl border border-line bg-white p-5 shadow-card transition hover:border-emerald/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald">
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-sky-100 text-sky-700"><Box className="size-6" /></span>
+          <span className="min-w-0 flex-1"><strong className="block text-base text-ink">Phòng lab 3D</strong><span className="mt-1 block text-sm text-secondary">Quan sát và khám phá 4 mô hình.</span></span>
+          <ArrowRight className="size-4 shrink-0 text-emerald transition group-hover:translate-x-1 motion-reduce:transform-none" />
+        </Link>
+      </div>
+    </section>
     {classroomLoading ? <section role="status" className="rounded-2xl border border-line bg-white p-6 text-sm text-secondary">Đang tải lớp học của bạn…</section>
       : classroomError ? <section role="alert" className="rounded-2xl border border-line bg-white p-6">
         <h2 className="text-xl font-extrabold text-ink">Không thể tải lớp học</h2>

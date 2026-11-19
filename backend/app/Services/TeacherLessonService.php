@@ -90,6 +90,20 @@ class TeacherLessonService
 
     private function validatePublishable(array $content): void
     {
+        $modelIds = config('simulations.models');
+        $seenModels = [];
+        $seenBlocks = [];
+        foreach (($content['simulations'] ?? []) as $simulation) {
+            $modelId = $simulation['modelId'] ?? null;
+            $blockId = $simulation['id'] ?? null;
+            if (! is_string($modelId) || ! in_array($modelId, $modelIds, true)
+                || ! is_string($blockId) || $blockId === ''
+                || isset($seenModels[$modelId]) || isset($seenBlocks[$blockId])) {
+                throw ValidationException::withMessages(['content.simulations' => 'Mô phỏng trong bài học không hợp lệ.']);
+            }
+            $seenModels[$modelId] = true;
+            $seenBlocks[$blockId] = true;
+        }
         if (! is_string($content['explanation'] ?? null) || trim($content['explanation']) === '') {
             throw ValidationException::withMessages(['content.explanation' => 'Vui lòng nhập nội dung trước khi đăng.']);
         }

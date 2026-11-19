@@ -7,6 +7,7 @@ import { getStudentLesson, getStudentLessons, type StudentLessonDetail, type Stu
 import { ApiError } from "../../service/api/client";
 import StudentLessonSections from "../../components/student/StudentLessonSections";
 import { LessonBody } from "../../components/common/LessonBody";
+import { StudentLessonSimulations } from "../../components/student/StudentLessonSimulations";
 
 export default function StudentLessonsPage() {
   const { session, status: authStatus } = useAuth();
@@ -337,6 +338,7 @@ export default function StudentLessonsPage() {
                   lessonId={selectedLesson.id}
                   studentId={session?.userId}
                 />
+                <StudentLessonSimulations key={selectedLesson.id} lessonId={selectedLesson.id} blocks={selectedContent.simulations ?? []} />
 
 
               </article>

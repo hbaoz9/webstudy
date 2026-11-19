@@ -54,6 +54,10 @@ export function buildLessonSavePayload(
       keyPoints: item.keyPoints.map((point) => point.trim()).filter(Boolean),
       videoUrl: item.videoUrl?.trim(),
     })),
+    simulations: content.simulations?.map((item) => ({
+      ...item,
+      observationGuide: item.observationGuide?.trim(),
+    })),
     status,
     updatedAt: timestamp,
   };

@@ -11,6 +11,7 @@ import { buildLessonSavePayload, validateLessonContent } from "../../utils/lesso
 
 import { LessonBody } from "../../components/common/LessonBody";
 import { LessonBodyEditor } from "../../components/common/LessonBodyEditor";
+import { SimulationLessonEditor } from "../../components/teacher/SimulationLessonEditor";
 
 type ContentFilter = "all" | "published" | "draft" | "empty";
 const statusFilters: { value: ContentFilter; label: string }[] = [
@@ -645,6 +646,11 @@ export default function TeacherLessonsPage() {
                   onChange={(explanation, explanationFormat) => updateLesson({ explanation, explanationFormat })}
                   layout="split"
                   hidePreview
+                />
+                <SimulationLessonEditor
+                  key={lesson.id}
+                  value={content.simulations ?? []}
+                  onChange={(simulations) => updateLesson({ simulations })}
                 />
               </div>
             </>

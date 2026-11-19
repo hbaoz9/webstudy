@@ -55,6 +55,12 @@ export type LearningAssetReference = {
   assetId: string;
 };
 
+export type SimulationLessonBlock = {
+  id: string;
+  modelId: string;
+  observationGuide?: string;
+};
+
 export type LessonSection = {
   id: string;
   title: string;
@@ -75,6 +81,7 @@ export type LessonContent = {
   explanation: string;
   explanationFormat?: LessonTextFormat;
   sections?: LessonSection[];
+  simulations?: SimulationLessonBlock[];
   status: "draft" | "published";
   updatedAt: string;
   // Keep a saved teacher draft alongside the content visible to students.

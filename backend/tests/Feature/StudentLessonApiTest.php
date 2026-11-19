@@ -311,6 +311,28 @@ class StudentLessonApiTest extends TestCase
         return $student;
     }
 
+    public function test_simulations_follow_existing_lesson_publication_and_classroom_access(): void
+    {
+        $teacher = $this->teacher();
+        $first = $this->classroom($teacher, '10S1');
+        $second = $this->classroom($teacher, '10S2');
+        $firstStudent = $this->member($teacher, $first, 'HS9001');
+        $secondStudent = $this->member($teacher, $second, 'HS9002');
+        $base = '/api/teacher/lessons/'.self::FIRST;
+        $content = $this->content(self::FIRST, 'Published lesson');
+        $content['simulations'] = [
+            ['id' => 'one', 'modelId' => 'earth-rotation', 'observationGuide' => 'Watch the axis'],
+            ['id' => 'two', 'modelId' => 'earth-layers'],
+        ];
+        $this->actingAs($teacher)->putJson($base.'/draft', ['content' => $content])->assertOk();
+        $this->actingAs($firstStudent)->getJson(self::PATH.'/'.self::FIRST)->assertNotFound();
+        $this->actingAs($teacher)->postJson($base.'/publish', ['classroomIds' => [$first->id]])->assertOk();
+        $this->actingAs($firstStudent)->getJson(self::PATH.'/'.self::FIRST)->assertOk()
+            ->assertJsonPath('data.content.simulations.0.modelId', 'earth-rotation')
+            ->assertJsonPath('data.content.simulations.1.modelId', 'earth-layers');
+        $this->actingAs($secondStudent)->getJson(self::PATH.'/'.self::FIRST)->assertNotFound();
+    }
+
     private function publish(User $teacher, string $lessonId, array $classroomIds): void
     {
         $base = '/api/teacher/lessons/'.$lessonId;

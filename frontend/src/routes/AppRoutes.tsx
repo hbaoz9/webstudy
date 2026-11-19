@@ -49,6 +49,8 @@ const StudentInfographicsPage = lazy(() => import("../pages/student/StudentInfog
 const StudentClassesPage = lazy(() => import("../pages/student/StudentClassesPage"));
 const StudentClassDetailPage = lazy(() => import("../pages/student/StudentClassDetailPage"));
 const StudentDashboardPage = lazy(() => import("../pages/student/StudentDashboardPage"));
+const StudentGamesPage = lazy(() => import("../pages/student/StudentGamesPage"));
+const StudentLab3DPage = lazy(() => import("../pages/student/StudentLab3DPage"));
 
 function LegacyStudentRedirect({ to }: { to: string }) {
   const { search, hash } = useLocation();
@@ -172,6 +174,10 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="dashboard" replace />} />
 
         <Route path="dashboard" element={<StudentDashboardPage />} />
+        <Route path="games" element={<StudentGamesPage />} />
+        <Route path="games/:gameId" element={<StudentGamesPage />} />
+        <Route path="3d-lab" element={<StudentLab3DPage />} />
+        <Route path="3d-lab/:modelId" element={<StudentLab3DPage />} />
 
         <Route path="classes" element={<StudentClassesPage />} />
 

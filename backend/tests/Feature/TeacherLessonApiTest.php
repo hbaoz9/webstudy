@@ -139,6 +139,34 @@ class TeacherLessonApiTest extends TestCase
         ]);
 }
 
+    public function test_simulation_references_are_validated_and_published_as_ordered_snapshot(): void
+    {
+        $this->seed(CurriculumSeeder::class);
+        $teacher = $this->verifiedTeacher();
+        $classroom = $this->classroom($teacher, '10S1');
+        $url = '/api/teacher/lessons/'.self::LESSON;
+        $content = $this->content('Lesson with simulations');
+        $content['simulations'] = [
+            ['id' => 'first', 'modelId' => 'plate-tectonics', 'observationGuide' => 'Observe the plate boundary'],
+            ['id' => 'second', 'modelId' => 'earth-layers'],
+        ];
+
+        $this->actingAs($teacher)->putJson($url.'/draft', ['content' => $content])->assertOk()
+            ->assertJsonPath('data.draftContent.simulations.0.modelId', 'plate-tectonics');
+        $this->postJson($url.'/publish', ['classroomIds' => [$classroom->id]])->assertOk()
+            ->assertJsonPath('data.publishedContent.simulations.1.modelId', 'earth-layers');
+
+        $content['simulations'][0]['observationGuide'] = 'Changed in draft';
+        $this->putJson($url.'/draft', ['content' => $content])->assertOk()
+            ->assertJsonPath('data.publishedContent.simulations.0.observationGuide', 'Observe the plate boundary');
+
+        $content['simulations'][1]['modelId'] = 'not-a-model';
+        $this->putJson($url.'/draft', ['content' => $content])->assertUnprocessable()
+            ->assertJsonValidationErrors(['content.simulations.1.modelId']);
+        $content['simulations'][1]['modelId'] = 'plate-tectonics';
+        $this->putJson($url.'/draft', ['content' => $content])->assertUnprocessable();
+    }
+
     private function content(string $body): array
     {
         return ['lessonId' => self::LESSON, 'status' => 'draft', 'objectives' => ['Understand'], 'keyPoints' => ['Key'],
