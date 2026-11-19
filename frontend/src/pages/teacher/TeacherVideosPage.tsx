@@ -9,6 +9,7 @@ import { TEACHER_VIDEOS_KEY, loadTeacherVideos, saveTeacherVideos, videoClassIds
 import type { AnswerOption } from "../../types/question";
 
 const letters = ["A", "B", "C", "D"] as const;
+const legacyBasePath = "/teacher/videos/local";
 const emptyOptions = (): Record<AnswerOption, string> => ({ A: "", B: "", C: "", D: "" });
 const inputStyle = "mt-2 min-h-11 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink";
 const secondaryButton = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-3 text-sm font-bold text-ink hover:bg-canvas";
@@ -153,7 +154,7 @@ export default function TeacherVideosPage() {
     const apply = () => {
       if (!changeVideo(modal === "info" ? target : undefined, next, modal === "info" ? "Đã lưu thông tin video." : "Đã thêm video.")) return false;
       setModal(null);
-      if (modal === "create") navigate(`/teacher/videos/${next.id}`);
+      if (modal === "create") navigate(`${legacyBasePath}/${next.id}`);
       return true;
     };
     if (target?.status === "published" && modal === "info") confirmChange("Cập nhật video đã đăng?", "Thay đổi thông tin sẽ hiển thị ngay cho học sinh trong các lớp đã đăng.", apply);
@@ -228,6 +229,7 @@ export default function TeacherVideosPage() {
     </details>;
   }
   return <div className={`min-w-0 space-y-5 [overflow-wrap:anywhere] ${video ? "pb-20 lg:pb-0" : ""}`}>
+    <p role="note" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Video ở khu vực này chỉ lưu trên thiết bị hiện tại, chưa đồng bộ với lớp học trên máy chủ. Không dùng để giao bài chính thức.</p>
     {!videoId ? <>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -253,7 +255,7 @@ export default function TeacherVideosPage() {
           <p className="text-sm text-secondary">{videos.length ? "Không tìm thấy video phù hợp. Thử đổi tìm kiếm hoặc bộ lọc." : "Dán link YouTube để tạo video tương tác đầu tiên."}</p>{!videos.length && <button type="button" onClick={() => openInfo()} className={`${primaryButton} mt-4`}>Thêm video đầu tiên</button>}</div> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filtered.slice(0, limit).map((item) => {
             const lesson = geo10Lessons.find((entry) => entry.id === item.lessonId); const ids = videoClassIds(item); const names = ids.map((id) => classrooms.find((entry) => entry.id === id)?.name ?? "Lớp không còn tồn tại").join(", ");
             return <article key={item.id} className="min-w-0 rounded-2xl bg-white p-3 shadow-card">
-              <Link to={`/teacher/videos/${item.id}${params.toString() ? `?${params}` : ""}`} className="block rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700">
+              <Link to={`${legacyBasePath}/${item.id}${params.toString() ? `?${params}` : ""}`} className="block rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700">
                 <VideoThumbnail key={item.youtubeId} id={item.youtubeId} title={item.title} />
                 <h2 title={item.title} className="mt-3 truncate text-base font-extrabold">{item.title}</h2>
                 <p title={lesson?.title} className="mt-1 truncate text-sm text-secondary">{lesson ? `Bài ${lesson.number}. ${lesson.title}` : "Chưa gắn bài học"}</p>
@@ -268,7 +270,7 @@ export default function TeacherVideosPage() {
           })}</div>}{limit < filtered.length && <button type="button" onClick={() => setLimit((current) => current + 12)} className={secondaryButton}>Xem thêm 12 video</button>}</section>
     </> : video ? <>
       <header className="space-y-3">
-        <Link to={`/teacher/videos${params.toString() ? `?${params}` : ""}`} className={secondaryButton}>← Danh sách video</Link>
+        <Link to={`${legacyBasePath}${params.toString() ? `?${params}` : ""}`} className={secondaryButton}>← Danh sách video</Link>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-extrabold">{video.title}</h1>
@@ -331,7 +333,7 @@ export default function TeacherVideosPage() {
         <button type="button" onClick={() => openQuestion()} className={`${primaryButton} w-full`}>+ Thêm câu hỏi tại {formatVideoTime(clock.seconds)}</button>
       </div>
     </> : <>
-      <Link to="/teacher/videos" className={secondaryButton}>← Danh sách video</Link>{notices}<p className="rounded-xl bg-white p-5 text-sm">Video không còn tồn tại. Nếu vừa xóa, bạn có thể Hoàn tác trong thông báo.</p>
+      <Link to={legacyBasePath} className={secondaryButton}>← Danh sách video</Link>{notices}<p className="rounded-xl bg-white p-5 text-sm">Video không còn tồn tại. Nếu vừa xóa, bạn có thể Hoàn tác trong thông báo.</p>
     </>}
     {(modal === "create" || modal === "info") && <Dialog title={modal === "create" ? "Thêm video" : "Sửa thông tin video"} onClose={closeModal}>
       <form onSubmit={saveInfo} noValidate className="space-y-4">

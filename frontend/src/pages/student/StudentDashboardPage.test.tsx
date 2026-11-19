@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import StudentDashboardPage from "./StudentDashboardPage";
+import { listStudentNotifications } from "../../service/api/distributions";
+
+vi.mock("../../service/api/distributions", () => ({ listStudentNotifications: vi.fn(), markStudentNotificationRead: vi.fn() }));
 
 vi.mock("../../contexts/StudentAccountContext", () => ({
   useStudentAccount: () => ({ student: { id: "student-1", name: "Tên prototype" }, hasStudentProfile: true }),
@@ -34,7 +37,7 @@ let host: HTMLDivElement;
 async function render(key = "initial") {
   await act(async () => { root.render(<MemoryRouter key={key}><StudentDashboardPage /></MemoryRouter>); });
 }
-const lessonCards = () => [...document.querySelectorAll<HTMLAnchorElement>('a[href^="/student/lessons?lesson="]')];
+const lessonCards = () => [...document.querySelectorAll<HTMLAnchorElement>('[aria-labelledby="student-recent-lessons-heading"] a[href^="/student/lessons?lesson="]')];
 function stubLessonApi(loadLessons: () => Promise<Response>) {
   const fetch = vi.fn((url: string) => {
     if (url === lessonUrl) return loadLessons();
@@ -47,6 +50,7 @@ function stubLessonApi(loadLessons: () => Promise<Response>) {
 
 describe("student dashboard classroom membership", () => {
   beforeEach(() => {
+    vi.mocked(listStudentNotifications).mockResolvedValue({ data: [], meta: { lastPage: 1 } });
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     userId = "student-1";
     authRole = "student";
@@ -56,6 +60,20 @@ describe("student dashboard classroom membership", () => {
   });
   afterEach(async () => {
     await act(async () => { root.unmount(); }); host.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks();
+  });
+
+  it("shows only API distributions in the assessment widget", async () => {
+    const fetch = vi.fn((url: string) => {
+      if (url === lessonUrl) return Promise.resolve(json({ data: [] }));
+      if (url === "/api/student/classrooms?page=1") return Promise.resolve(json(page([membership])));
+      if (url === "/api/student/distributions?page=1") return Promise.resolve(json({ data: [{ id: "dist-api", title: "Đề thật", classroomName: "10A1 API", deadlineAt: "2026-12-01T00:00:00Z" }] }));
+      throw new Error(`Unexpected ${url}`);
+    });
+    vi.stubGlobal("fetch", fetch);
+    await render();
+    expect(document.body.textContent).toContain("Đề thật");
+    expect(document.querySelector('a[href="/student/assessments/dist-api"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Lớp mẫu");
   });
 
   it("shows an empty classroom state rather than a prototype class", async () => {
@@ -69,6 +87,7 @@ describe("student dashboard classroom membership", () => {
     await render();
     expect(document.body.textContent).toContain("Bạn chưa tham gia lớp học nào");
     expect(document.body.textContent).toContain("Chào Học sinh API");
+    expect(document.body.textContent).toContain("Khám phá Địa lí 10");
     expect(document.body.textContent).not.toContain("Lớp mẫu");
     expect(document.body.textContent).not.toContain("Tên prototype");
   });
@@ -134,9 +153,11 @@ describe("student dashboard classroom membership", () => {
     });
     vi.stubGlobal("fetch", fetch);
     await render();
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("offline");
+    const classroomAlert = [...document.querySelectorAll('[role="alert"]')].find(item => item.textContent?.includes("Không thể tải lớp học"));
+    expect(classroomAlert?.textContent).toContain("Vui lòng thử lại");
+    expect(classroomAlert?.textContent).not.toContain("offline");
     expect(document.body.textContent).not.toContain(classroom.name);
-    await act(async () => { [...document.querySelectorAll("button")].find((button) => button.textContent === "Thử lại")?.click(); });
+    await act(async () => { classroomAlert?.querySelector("button")?.click(); });
     expect(document.body.textContent).toContain(classroom.name);
     expect(calls).toBe(2);
   });

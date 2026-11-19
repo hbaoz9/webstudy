@@ -47,6 +47,36 @@ describe("Teacher Question editor API integration", () => {
   });
   afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 
+  it("reuses six-type validation inline and passes the persisted Bank ID to the Assessment editor", async () => {
+    const created = { id: "server-question-uuid", version: 1, type: "essay_text", content: "Explain a river" };
+    const onCreated = vi.fn();
+    addQuestion.mockResolvedValue(created);
+    await act(async () => { root.render(<MemoryRouter><TeacherCreateQuestionPage onCreated={onCreated} onCancel={vi.fn()} /></MemoryRouter>); });
+    const selects = [...host.querySelectorAll("select")];
+    await act(async () => { change(selects[0], "essay_text"); change(selects[1], "geo10-kn-b07"); change(host.querySelector("textarea")!, "Explain a river"); });
+    await submit();
+    expect(addQuestion).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith(created);
+    expect(host.textContent).not.toContain("Lưu và thêm câu mới");
+  });
+
+  it.each([undefined, 500])("does not retry an uncertain inline Bank creation after status %s, including F5", async (status) => {
+    const onCreated = vi.fn();
+    addQuestion.mockRejectedValue(new ApiError("Không thể kết nối máy chủ.", status));
+    await act(async () => { root.render(<MemoryRouter><TeacherCreateQuestionPage onCreated={onCreated} onCancel={vi.fn()} /></MemoryRouter>); });
+    const selects = [...host.querySelectorAll("select")];
+    await act(async () => { change(selects[0], "essay_text"); change(selects[1], "geo10-kn-b07"); change(host.querySelector("textarea")!, "Explain a river"); });
+    await submit();
+    expect(addQuestion).toHaveBeenCalledTimes(1);
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Chưa xác định câu hỏi đã được lưu hay chưa");
+    expect(host.querySelector<HTMLTextAreaElement>('textarea[data-validation-field="content"]')?.value).toBe("Explain a river");
+    await act(async () => { root.unmount(); });
+    root = createRoot(host);
+    await act(async () => { root.render(<MemoryRouter><TeacherCreateQuestionPage onCreated={onCreated} onCancel={vi.fn()} /></MemoryRouter>); });
+    expect(addQuestion).toHaveBeenCalledTimes(1);
+  });
+
   it("loads a direct edit URL from backend and displays private essay rubric", async () => {
     getQuestion.mockResolvedValue(essay);
     await render("/teacher/questions/uuid-1/edit");

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Archive, Plus, School } from "lucide-react";
+import { Archive, ArrowUpRight, Compass, MoreHorizontal, Plus } from "lucide-react";
+import { StudentEmptyState } from "../../components/student/StudentEmptyState";
 import { ApiError } from "../../service/api/client";
 import { getStudentActiveMembershipsPage, leaveStudentClassroom, type ApiPage, type ClassroomMembership } from "../../service/api/joinRequests";
 
@@ -12,6 +13,7 @@ export default function StudentClassesPage() {
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState("");
   const [notice, setNotice] = useState("");
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const leaveLock = useRef(false);
   const key = `${page}:${revision}`;
   const current = result?.key === key ? result : null;
@@ -77,33 +79,31 @@ export default function StudentClassesPage() {
       {current.error} <button type="button" onClick={() => setRevision((value) => value + 1)} className="ml-2 font-bold underline">Thử lại</button>
     </section>}
     {current?.data && <>
-      <section className="rounded-2xl border border-line bg-white p-5 shadow-card">
-        <p className="text-sm text-secondary">Đã tham gia</p>
-        <p className="mt-3 text-3xl font-extrabold text-ink">{current.data.meta.total}</p>
-      </section>
-      {current.data.data.length === 0 ? <section className="rounded-2xl border border-dashed border-line bg-white px-6 py-12 text-center">
-        <School className="mx-auto size-10 text-muted" />
-        <h2 className="mt-4 text-lg font-extrabold text-ink">Bạn chưa tham gia lớp học nào</h2>
-        <p className="mt-2 text-sm text-secondary">Khi giáo viên duyệt yêu cầu, lớp học sẽ xuất hiện tại đây.</p>
-        <Link to="/student/join-class" className="mt-5 inline-flex rounded-xl bg-emerald px-5 py-3 text-sm font-bold text-white">Tham gia lớp học</Link>
-      </section> : <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      {current.data.data.length > 0 && <section className="rounded-2xl border border-line bg-white px-5 py-3 text-sm text-secondary">
+        <strong className="text-lg text-ink">{current.data.meta.total}</strong> lớp học của bạn
+      </section>}
+      {current.data.data.length === 0 ? <StudentEmptyState title="Bạn chưa tham gia lớp học nào" description="Khi giáo viên duyệt yêu cầu, lớp học sẽ xuất hiện tại đây." to="/student/join-class" action="Tham gia lớp học" /> : <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {current.data.data.map((membership) => {
           const classroom = membership.classroom;
-          return <article key={membership.id} className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
-            <div className={`relative bg-gradient-to-br from-slate-600 to-ink bg-cover bg-center ${classroom.coverImage ? "h-36" : "h-20"}`} style={classroom.coverImage ? { backgroundImage: `url(${classroom.coverImage})` } : undefined}>
+          return <article key={membership.id} className="group rounded-3xl border border-line bg-white shadow-card transition hover:border-emerald/40">
+            <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-t-3xl bg-emerald/10 bg-cover bg-center" style={classroom.coverImage ? { backgroundImage: `url(${classroom.coverImage})` } : undefined}>
+              {!classroom.coverImage && <><Compass aria-hidden="true" className="size-16 text-emerald/35" /><span aria-hidden="true" className="absolute -bottom-12 -right-8 size-32 rounded-full border-[18px] border-emerald/15" /></>}
               {classroom.status === "archived" && <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-secondary"><Archive className="size-3.5" /> Đã lưu trữ</span>}
             </div>
             <div className="space-y-4 p-5">
-              <div>
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0">
                 <h3 className="text-lg font-extrabold text-ink">{classroom.name}</h3>
                 <p className="mt-1 text-xs text-secondary">Năm học {classroom.academicYear}</p>
-              </div>
-              <div><span className="inline-flex rounded-full bg-emerald/10 px-3 py-1.5 text-xs font-bold text-emerald">Đã tham gia</span></div>
+              </div>{membership.status === "active" && <div className="relative shrink-0" onKeyDown={event => { if (event.key === "Escape") setOpenMenu(null); }}>
+                <button type="button" aria-label={`Tùy chọn lớp ${classroom.name}`} title="Tùy chọn lớp" aria-expanded={openMenu === membership.id}
+                  onClick={() => setOpenMenu(value => value === membership.id ? null : membership.id)}
+                  className="grid size-11 place-items-center rounded-xl border border-line text-secondary hover:bg-canvas focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald"><MoreHorizontal className="size-5" /></button>
+                {openMenu === membership.id && <div className="absolute right-0 top-12 z-10 min-w-32 rounded-xl border border-line bg-white p-1 shadow-lg">
+                  <button type="button" onClick={() => { setOpenMenu(null); setLeaveTarget(membership); setLeaveError(""); setNotice(""); }} className="min-h-11 w-full rounded-lg px-3 text-left text-sm font-bold text-red-600 hover:bg-red-50">Rời lớp</button>
+                </div>}
+              </div>}</div>
               {classroom.description && <p className="text-sm text-secondary">{classroom.description}</p>}
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                <Link to={`/student/classes/${classroom.id}`} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald px-5 text-sm font-bold text-white transition hover:opacity-90">Xem lớp học</Link>
-                {membership.status === "active" && <button type="button" onClick={() => { setLeaveTarget(membership); setLeaveError(""); setNotice(""); }} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-red-200 bg-white px-5 text-sm font-bold text-red-600 transition hover:bg-red-50">Rời lớp</button>}
-              </div>
+              <Link to={`/student/classes/${classroom.id}`} className="inline-flex min-h-11 w-full items-center justify-between rounded-xl bg-emerald px-5 text-sm font-bold text-white hover:opacity-90">Xem lớp học <ArrowUpRight className="size-4" /></Link>
             </div>
           </article>;
         })}

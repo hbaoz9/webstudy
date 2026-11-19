@@ -49,6 +49,7 @@ export default function StudentVideosPage() {
   return (
     <div className="min-w-0 py-2">
       <div className="mx-auto max-w-3xl space-y-6">
+        <p role="note" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Video ở đây là dữ liệu lưu trên thiết bị, chưa phải học liệu được xác nhận cho lớp trên máy chủ.</p>
         <header>
           <h1 className="text-2xl font-extrabold text-ink">
             {selectedLesson

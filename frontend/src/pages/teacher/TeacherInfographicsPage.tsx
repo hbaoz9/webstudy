@@ -21,6 +21,7 @@ export default function TeacherInfographicsPage() {
 
   return (
     <div className="min-w-0 space-y-6">
+      <p role="note" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Ảnh tải lên ở đây chỉ lưu trên thiết bị. Bài học có tham chiếu ảnh này chưa thể công bố qua máy chủ cho đến khi có lưu trữ Backend.</p>
       <header>
         <h1 className="text-2xl font-extrabold text-ink">Học liệu trực quan</h1>
         <p className="mt-2 text-sm text-secondary">

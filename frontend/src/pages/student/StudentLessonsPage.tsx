@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { StudentEmptyState } from "../../components/student/StudentEmptyState";
 import { getStudentLesson, getStudentLessons, type StudentLessonDetail, type StudentLessonSummary } from "../../service/api/lessons";
 import { ApiError } from "../../service/api/client";
 import StudentLessonSections from "../../components/student/StudentLessonSections";
@@ -145,13 +146,14 @@ export default function StudentLessonsPage() {
 
   return (
     <div className="min-w-0 py-2">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <header>
-          <h1 className="text-2xl font-extrabold text-ink">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <header className="rounded-3xl border border-line bg-white px-6 py-7 shadow-card sm:px-8">
+          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald">Thư viện bài học</p>
+          <h1 className="mt-2 text-2xl font-extrabold text-ink">
             Bài học Địa lí 10
           </h1>
           <p className="mt-2 text-sm text-secondary">
-            Kết nối tri thức với cuộc sống
+            Chọn chương hoặc tìm bài học giáo viên đã chia sẻ với lớp bạn.
           </p>
         </header>
 
@@ -167,12 +169,10 @@ export default function StudentLessonsPage() {
             </button>
           </div>
         ) : publishedLessons.length === 0 ? (
-          <p className="rounded-2xl border border-line bg-white p-8 text-sm text-secondary">
-            Chưa có bài học nào được phân phối cho lớp của bạn.
-          </p>
+          <StudentEmptyState title="Chưa có bài học nào được phân phối cho lớp của bạn." description="Khi giáo viên đăng bài, bạn sẽ thấy bài học ở đây. Trong lúc chờ, hãy xem lớp học hoặc bài được giao." to="/student/classes" action="Xem lớp học" />
         ) : (
           <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <section className="min-w-0 self-start rounded-2xl border border-line bg-white p-4 shadow-card lg:sticky lg:top-24">
+            <section className="min-w-0 self-start rounded-3xl border border-line bg-white p-4 shadow-card lg:sticky lg:top-24">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-sm font-extrabold text-ink">
@@ -232,7 +232,7 @@ export default function StudentLessonsPage() {
                       ),
                     )
                     .map((part) => (
-                      <div key={part.id}>
+                      <div key={part.id} className="rounded-2xl bg-canvas/70 p-3">
                         <h2 className="text-sm font-extrabold text-ink">
                           Phần {part.number}. {part.title}
                         </h2>

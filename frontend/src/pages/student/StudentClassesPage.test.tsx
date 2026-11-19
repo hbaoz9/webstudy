@@ -13,7 +13,7 @@ const page = (data: unknown[], current = 1, last = 1, total = data.length) => ({
 let root: Root;
 let host: HTMLDivElement;
 const button = (label: string) => {
-  const found = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === label);
+  const found = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === label || item.getAttribute("aria-label") === label);
   if (!found) throw new Error(`Missing button: ${label}`);
   return found;
 };
@@ -52,12 +52,14 @@ describe("student classes with Laravel API mock", () => {
     expect(document.body.textContent).not.toContain("Đang xử lý");
     const card = [...document.querySelectorAll("article")].find((item) => item.textContent?.includes("10A1 API"))!;
     const view = [...card.querySelectorAll("a")].find((item) => item.textContent?.includes("Xem lớp học"))!;
-    const leave = [...card.querySelectorAll("button")].find((item) => item.textContent?.includes("Rời lớp"))!;
-    const badge = [...card.querySelectorAll("span")].find((item) => item.textContent === "Đã tham gia")!;
-    expect(view.parentElement).toBe(leave.parentElement);
-    expect(badge.parentElement).not.toBe(view.parentElement);
-    expect(leave.className).toContain("border-red-200");
-    expect(card.querySelector(".h-20")).not.toBeNull();
+    expect(card.querySelector('[aria-label="Tùy chọn lớp 10A1 API"]')).not.toBeNull();
+    expect(card.textContent).not.toContain("Rời lớp");
+    await act(async () => { button("Tùy chọn lớp 10A1 API").click(); });
+    expect(card.textContent).toContain("Rời lớp");
+    await act(async () => { button("Tùy chọn lớp 10A1 API").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(card.textContent).not.toContain("Rời lớp");
+    expect(view.getAttribute("href")).toBe("/student/classes/class-1");
+    expect(card.querySelector(".h-32")).not.toBeNull();
     await act(async () => { [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Trang sau")?.click(); });
     expect(document.body.textContent).toContain("10A2 API");
     expect(document.body.textContent).not.toContain("10A1 API");
@@ -76,6 +78,7 @@ describe("student classes with Laravel API mock", () => {
     active = false;
     await act(async () => { root.render(<MemoryRouter key="refresh" initialEntries={["/student/classes"]}><Routes><Route path="/student/classes" element={<StudentClassesPage />} /></Routes></MemoryRouter>); });
     expect(document.body.textContent).toContain("Bạn chưa tham gia lớp học nào");
+    expect([...host.querySelectorAll("section")].some((section) => section.textContent?.includes("Đã tham gia"))).toBe(false);
     expect(document.body.textContent).not.toContain("10A1 API");
     expect(mock.mock.calls.filter(([url]) => url === "/api/student/classrooms?page=1")).toHaveLength(2);
   });
@@ -88,7 +91,7 @@ describe("student classes with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await render();
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("offline");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     expect(document.body.textContent).not.toContain("10A1 API");
     await act(async () => { [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Thử lại")?.click(); });
     expect(document.body.textContent).toContain("10A1 API");
@@ -114,7 +117,7 @@ describe("student classes with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await render("/student/classes/class-1");
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Forbidden");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Không thể tải lớp học");
     expect(document.querySelector("h1")).toBeNull();
   });
 
@@ -131,10 +134,12 @@ describe("student classes with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await render();
+    await act(async () => { button("Tùy chọn lớp 10A1 API").click(); });
     await act(async () => { button("Rời lớp").click(); });
     expect(mock.mock.calls.filter(([url]) => url === leaveUrl)).toHaveLength(0);
     await act(async () => { button("Hủy").click(); });
     expect(mock.mock.calls.filter(([url]) => url === leaveUrl)).toHaveLength(0);
+    await act(async () => { button("Tùy chọn lớp 10A1 API").click(); });
     await act(async () => { button("Rời lớp").click(); });
     await act(async () => { const confirm = button("Xác nhận rời lớp"); confirm.click(); confirm.click(); });
     expect(mock.mock.calls.filter(([url]) => url === leaveUrl)).toHaveLength(1);
@@ -161,6 +166,7 @@ describe("student classes with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await render();
+    await act(async () => { button("Tùy chọn lớp 10A1 API").click(); });
     await act(async () => { button("Rời lớp").click(); });
     await act(async () => { button("Xác nhận rời lớp").click(); });
     expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain("Leave failed 1");

@@ -43,6 +43,7 @@ async function parseResponse<T>(response: Response, announceUnauthorized = true)
       : response.status === 403
         ? "Bạn không có quyền thực hiện thao tác này."
         : `Yêu cầu thất bại (${response.status}).`;
+    if (response.status >= 500) throw new ApiError("Máy chủ đang gặp sự cố. Vui lòng thử lại.", response.status);
     throw new ApiError(payload?.message ?? fallback, response.status, payload?.errors ?? {});
   }
   return payload as T;

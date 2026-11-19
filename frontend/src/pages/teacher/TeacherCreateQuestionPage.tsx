@@ -96,7 +96,11 @@ function createInitialQuestion(
   return { ...commonFields, type: "single_choice", options, correctOptionId: "" };
 }
 
-export default function TeacherCreateQuestionPage() {
+export default function TeacherCreateQuestionPage({ onCreated, onCancel, onDirtyChange }: {
+  onCreated?: (question: TeacherQuestion) => void | Promise<void>;
+  onCancel?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+} = {}) {
   const navigate = useNavigate();
   const { questionId } = useParams();
   const [params] = useSearchParams();
@@ -144,6 +148,15 @@ export default function TeacherCreateQuestionPage() {
   const formRef = useRef<HTMLFormElement>(null);
   const mediaRef = useRef<HTMLDivElement>(null);
   const previousQuestion = useRef(question);
+
+  useEffect(() => {
+    if (!onDirtyChange) return;
+    onDirtyChange(Boolean(question.content.trim() || question.lessonId || question.image || question.explanation?.trim() ||
+      ("options" in question && question.options.some(option => option.text.trim())) ||
+      ("statements" in question && question.statements.some(statement => statement.content.trim())) ||
+      ("rubricText" in question && question.rubricText?.trim())));
+    return () => onDirtyChange(false);
+  }, [onDirtyChange, question]);
 
   useEffect(() => {
     if (previousQuestion.current === question) return;
@@ -406,7 +419,8 @@ export default function TeacherCreateQuestionPage() {
         navigate(backTo);
         return;
       }
-      await addQuestion(input);
+      const created = await addQuestion(input);
+      if (onCreated) { await onCreated(created); return; }
       if (!continueAdding) { navigate(backTo); return; }
       setQuestion({ ...createInitialQuestion(input.type), lessonId: input.lessonId, chapter: input.chapter, difficulty: input.difficulty });
       setMediaOpen(false);
@@ -428,7 +442,9 @@ export default function TeacherCreateQuestionPage() {
           : key === "rubricText" ? "rubric" : key === "explanation" ? "explanation" : null;
         if (field && !field.endsWith("undefined") && messages?.[0]) { showFieldError(field, messages[0]); return; }
       }
-      setError(cause instanceof ApiError && cause.status === 409
+      setError(onCreated && (!(cause instanceof ApiError) || cause.status === undefined || cause.status >= 500)
+        ? "Chưa xác định câu hỏi đã được lưu hay chưa. Hãy kiểm tra Ngân hàng câu hỏi trước khi tạo lại; nội dung đang soạn vẫn được giữ."
+        : cause instanceof ApiError && cause.status === 409
         ? "Câu hỏi đã được cập nhật ở nơi khác. Sao chép nội dung đang soạn, tải lại câu hỏi rồi thử lại."
         : cause instanceof ApiError && cause.status === 422
           ? Object.values(cause.errors).flat().join(" ") || cause.message
@@ -440,7 +456,7 @@ export default function TeacherCreateQuestionPage() {
     event.preventDefault();
     setError(""); setNotice("");
     const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
-    const continueAdding = !questionId && submitter instanceof HTMLButtonElement && submitter.value === "continue";
+    const continueAdding = !onCreated && !questionId && submitter instanceof HTMLButtonElement && submitter.value === "continue";
     if (imageProcessing) { showFieldError("image", "Đợi ảnh xử lý xong trước khi lưu câu hỏi."); return; }
     const imageError = questionImageError(question.image);
     const result = validateQuestionInput(question, geo10Lessons);
@@ -476,13 +492,13 @@ export default function TeacherCreateQuestionPage() {
 
   return (
     <div className="space-y-6">
-      <Link
+      {!onCreated && <Link
         to={backTo}
         className="inline-flex items-center gap-2 text-sm font-bold text-secondary hover:text-emerald"
       >
         <ArrowLeft className="size-4" />
         Quay lại ngân hàng câu hỏi
-      </Link>
+      </Link>}
 
       <div>
         <h1 className="text-2xl font-extrabold text-ink">
@@ -1028,13 +1044,13 @@ export default function TeacherCreateQuestionPage() {
             {questionId ? "Lưu thay đổi" : "Lưu câu hỏi"}
           </button>
 
-          {!questionId && <button type="submit" name="intent" value="continue" disabled={saving} className="min-h-12 rounded-full bg-emerald px-6 text-sm font-bold text-white hover:bg-emerald/90 disabled:opacity-50">Lưu và thêm câu mới</button>}
-          <Link
+          {!questionId && !onCreated && <button type="submit" name="intent" value="continue" disabled={saving} className="min-h-12 rounded-full bg-emerald px-6 text-sm font-bold text-white hover:bg-emerald/90 disabled:opacity-50">Lưu và thêm câu mới</button>}
+          {onCancel ? <button type="button" disabled={saving} onClick={onCancel} className="inline-flex min-h-12 items-center rounded-full border border-line px-6 text-sm font-bold text-ink hover:bg-slate-50">Hủy</button> : <Link
             to={backTo}
             className="inline-flex min-h-12 items-center rounded-full border border-line px-6 text-sm font-bold text-ink hover:bg-slate-50"
           >
             Hủy
-          </Link>
+          </Link>}
         </div>
       </form>
     </div>

@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useSearchParams } from "react-router-dom";
+import { RefreshCw } from "lucide-react";
+import { IconAction } from "../../components/common/IconAction";
 
 import type { CurriculumChapter, CurriculumLesson, CurriculumPart, LessonContent } from "../../types/curriculum";
 import { listTeacherClassrooms, type TeacherClassroom } from "../../service/api/classrooms";
@@ -581,7 +583,7 @@ export default function TeacherLessonsPage() {
 
   if (loading) return <p role="status" className="p-5 text-sm text-secondary">Đang tải bài học từ máy chủ…</p>;
   if (loadError) return <div role="alert" className="rounded-2xl border border-line bg-white p-5"><p>{loadError}</p><button type="button" onClick={() => setReload(value => value + 1)} className="mt-3 rounded-full bg-emerald px-4 py-2 text-white">Thử lại</button></div>;
-  if (catalog.length === 0) return <div className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary"><p>Chưa có bài học trong danh mục trên máy chủ.</p><button type="button" onClick={() => setReload(value => value + 1)} className="mt-3 rounded-full border border-line px-4 py-2 font-bold text-ink">Tải lại</button></div>;
+  if (catalog.length === 0) return <div className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary"><p>Chưa có bài học trong danh mục trên máy chủ.</p><IconAction icon={RefreshCw} label="Tải lại danh mục bài học" loading={loading} className="mt-3" onClick={() => setReload(value => value + 1)} /></div>;
 
   return (
     <div className="min-w-0 space-y-5 pb-40">

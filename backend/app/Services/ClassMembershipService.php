@@ -321,6 +321,8 @@ class ClassMembershipService
     {
         return DB::transaction(function () use ($actor, $membership): ClassMembership {
             $student = User::query()->whereKey($membership->student_id)->lockForUpdate()->firstOrFail();
+            // Serialize leaving with distribution cancellation's recipient snapshot.
+            Classroom::withTrashed()->whereKey($membership->classroom_id)->lockForUpdate()->firstOrFail();
             $locked = ClassMembership::query()->whereKey($membership->id)->lockForUpdate()->firstOrFail();
 
             if ($actor->id !== $student->id) {

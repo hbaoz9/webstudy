@@ -12,7 +12,6 @@ import {
   LogOut,
 } from "lucide-react";
 
-import { useTeacherAccount } from "../../contexts/TeacherAccountContext";
 import { useAuth } from "../../contexts/AuthContext";
 
 type TeacherSidebarProps = {
@@ -53,13 +52,8 @@ const contentNavigationItems = [
 
 const activityNavigationItems = [
   {
-    label: "Bộ đề đánh giá",
-    path: "/teacher/assessments",
-    icon: ClipboardList,
-  },
-  {
     label: "Bài tập & Kiểm tra",
-    path: "/teacher/assignments",
+    path: "/teacher/assessments",
     icon: ClipboardList,
   },
   {
@@ -70,9 +64,8 @@ const activityNavigationItems = [
 ];
 
 export function TeacherSidebar({ isOpen, onClose }: TeacherSidebarProps) {
-  const { teacherAccount } = useTeacherAccount();
-  const teacherName = teacherAccount.submission?.fullName?.trim() || teacherAccount.profile?.name;
-  const { signOut, error } = useAuth();
+  const { session, signOut, error } = useAuth();
+  const teacherName = session?.name;
 
   const renderNavigationItems = (items: typeof mainNavigationItems) => {
     return items.map((item) => {

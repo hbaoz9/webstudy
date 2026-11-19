@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
+import { IconAction } from "../../components/common/IconAction";
 import { useAuth } from "../../contexts/AuthContext";
 import { ApiError } from "../../service/api/client";
 import {
@@ -179,9 +180,7 @@ export default function StudentJoinClassPage() {
       <section aria-labelledby="join-history-title" className="mx-auto mt-6 max-w-xl rounded-2xl border border-line bg-white p-4 shadow-card sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="join-history-title" className="text-lg font-extrabold text-ink">Lịch sử yêu cầu</h2>
-          <button type="button" onClick={() => void refreshStatus()} disabled={statusLoading || refreshing} aria-label={refreshing ? "Đang làm mới trạng thái" : "Làm mới trạng thái"} title={refreshing ? "Đang làm mới trạng thái" : "Làm mới trạng thái"} className="grid size-11 shrink-0 place-items-center rounded-full text-emerald hover:bg-emerald/10 disabled:cursor-not-allowed disabled:opacity-50">
-            <RefreshCw className={`size-5 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
-          </button>
+          <IconAction icon={RefreshCw} label={refreshing ? "Đang làm mới trạng thái" : "Làm mới trạng thái"} loading={refreshing || statusLoading} onClick={() => void refreshStatus()} />
         </div>
         {!statusLoading && !statusError && (historyRequests.length === 0
           ? <p className="mt-3 text-sm text-muted">{currentPending ? "Chưa có yêu cầu trước đó." : "Bạn chưa gửi yêu cầu tham gia lớp nào."}</p>

@@ -170,7 +170,7 @@ export default function TeacherClassCoreDetailPage() {
               <button type="button" onClick={() => void copyCode()} aria-label={`Sao chép mã lớp ${classroom.code}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white/15 px-5 text-sm font-bold backdrop-blur-sm transition hover:bg-white/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
                 {copied ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}{copied ? "Đã sao chép" : `Mã lớp: ${classroom.code}`}
               </button>
-              {classroom.status === "active" && <button type="button" onClick={beginEdit} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white/15 px-5 text-sm font-bold backdrop-blur-sm transition hover:bg-white/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><Settings className="size-4" aria-hidden="true" />Cài đặt</button>}
+              {classroom.status === "active" && <button type="button" onClick={beginEdit} aria-label="Cài đặt lớp học" title="Cài đặt lớp học" className="grid size-11 place-items-center rounded-full bg-white/15 backdrop-blur-sm transition hover:bg-white/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><Settings className="size-5" aria-hidden="true" /></button>}
               {classroom.status === "archived" && <button type="button" onClick={() => { setRestoreError(""); setConfirmRestore(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white/15 px-5 text-sm font-bold backdrop-blur-sm transition hover:bg-white/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><ArchiveRestore className="size-4" aria-hidden="true" />Khôi phục lớp</button>}
               {classroom.status === "archived" && <button type="button" onClick={() => { setDeleteError(""); setConfirmDelete(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-red-200 bg-red-950/40 px-5 text-sm font-bold text-white backdrop-blur-sm transition hover:bg-red-900/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"><Trash2 className="size-4" aria-hidden="true" />Xóa lớp</button>}
             </div>
@@ -182,6 +182,10 @@ export default function TeacherClassCoreDetailPage() {
         <TeacherStatCard label="Sĩ số lớp" value={classroom.studentCount} description="Học sinh đang tham gia" icon={UsersRound} tone="green" />
       </section>
       {notice && <p role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">{notice}</p>}
+      <div className="rounded-2xl border border-line bg-white p-4 shadow-card">
+        <Link to={`/teacher/assessments?classId=${encodeURIComponent(classroom.id)}`} className="inline-flex min-h-11 items-center rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white">Soạn Bài tập & Kiểm tra</Link>
+        <p className="mt-2 text-sm text-secondary">Giữ ngữ cảnh lớp khi soạn. Chưa thể giao bài cho học sinh ở bước này.</p>
+      </div>
 
       <TeacherRosterReadSection key={classroom.id} classroomId={classroom.id} classroomName={classroom.name} archived={classroom.status === "archived"} refreshToken={rosterRevision} />
       <TeacherJoinRequestsSection key={`requests-${classroom.id}`} classroomId={classroom.id} archived={classroom.status === "archived"} onMembershipChange={async () => setClassroom(await getTeacherClassroom(classroom.id))} onRosterChange={() => setRosterRevision((value) => value + 1)} />

@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { IconAction } from "../../components/common/IconAction";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiRequest } from "../../service/api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -31,6 +33,7 @@ export default function TeacherVerificationsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const retryRunning = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +50,13 @@ export default function TeacherVerificationsPage() {
   }, [page]);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function retryLoad() {
+    if (retryRunning.current || loading) return;
+    retryRunning.current = true;
+    try { await load(); }
+    finally { retryRunning.current = false; }
+  }
 
   const current = result?.data.find((item) => item.id === selected);
   const pending = result?.data.filter((item) => item.status === "pending") ?? [];
@@ -78,7 +88,7 @@ export default function TeacherVerificationsPage() {
         <button type="button" onClick={async () => { if (await signOut()) navigate("/auth?role=admin", { replace: true }); }} className="min-h-11 rounded-xl border border-line bg-white px-4 text-sm font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald">Đăng xuất</button>
       </header>
       {success && <p role="status" className="rounded-xl border border-emerald/30 bg-emerald/10 p-4 text-sm">{success}</p>}
-      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error} <button type="button" onClick={() => void load()} className="ml-2 font-bold underline">Tải lại</button></div>}
+      {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span>{error}</span><IconAction icon={RefreshCw} label="Tải lại hồ sơ xác minh" loading={loading} onClick={() => void retryLoad()} /></div>}
       {loading && <p role="status" className="text-sm text-secondary">Đang tải hồ sơ…</p>}
       {!loading && result && <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <div className="space-y-5">

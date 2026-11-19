@@ -427,7 +427,7 @@ describe("teacher join request management", () => {
     });
     await render(mock);
     await act(async () => { button("Xác minh thủ công").click(); });
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Roster unavailable");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     await act(async () => { button("Thử lại").click(); });
     expect(rosterCalls).toBe(2);
     expect(document.querySelector("#manual-verification-title")).not.toBeNull();
@@ -507,7 +507,7 @@ describe("teacher join request management", () => {
     expect(document.querySelector('#bulk-preview-title')).not.toBeNull();
     expect(document.querySelector('[role="dialog"] [role="status"]')?.textContent).toContain("Đang tải danh sách xem trước");
     await act(async () => { resolvePreview(json({ message: "Preview unavailable" }, 500)); });
-    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain("Preview unavailable");
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     await act(async () => { button("Thử lại").click(); });
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Không có yêu cầu đủ điều kiện trên trang này.");
     expect(attempts).toBe(2);
@@ -647,7 +647,7 @@ describe("teacher join request management", () => {
     await act(async () => { dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1].click(); });
     await act(async () => { button("Tiếp tục").click(); });
     await act(async () => { button("Duyệt 1 học sinh").click(); });
-    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("Approval failed");
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     expect(dialog.textContent).not.toContain("Đã duyệt: 1");
     expect(executions).toBe(1);
     await act(async () => { button("Kiểm tra lại").click(); });

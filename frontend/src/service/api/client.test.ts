@@ -44,6 +44,16 @@ describe("Sanctum API client", () => {
       .rejects.toMatchObject({ status: 422, errors: { email: ["Invalid credentials"] } });
   });
 
+  it("hides internal SQL details on server errors without changing validation errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({
+      message: "SQLSTATE[42P01] database webstudy relation missing",
+      errors: { query: ["SELECT secret"] },
+    }, 500)));
+    await expect(apiGet("/teacher/distributions")).rejects.toMatchObject({
+      status: 500, message: "Máy chủ đang gặp sự cố. Vui lòng thử lại.", errors: {},
+    });
+  });
+
   it("refreshes CSRF once after a 419 response", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(null, { status: 204 }))

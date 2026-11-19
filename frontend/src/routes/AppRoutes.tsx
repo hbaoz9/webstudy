@@ -31,17 +31,21 @@ const TeacherCreateQuestionPage = lazy(() => import("../pages/teacher/TeacherCre
 
 const TeacherAssignmentsPage = lazy(() => import("../pages/teacher/TeacherAssignmentsPage"));
 const TeacherAssessmentsPage = lazy(() => import("../pages/teacher/TeacherAssessmentsPage"));
+const TeacherGradingPage = lazy(() => import("../pages/teacher/TeacherGradingPage"));
 const TeacherAssignmentDetailPage = lazy(() => import("../pages/teacher/TeacherAssignmentDetailPage"));
 
 const TeacherVideosPage = lazy(() => import("../pages/teacher/TeacherVideosPage"));
+const TeacherInteractiveVideosPage = lazy(() => import("../pages/teacher/TeacherInteractiveVideosPage"));
 const TeacherInfographicsPage = lazy(() => import("../pages/teacher/TeacherInfographicsPage"));
+const TeacherServerInfographicsPage = lazy(() => import("../pages/teacher/TeacherServerInfographicsPage"));
 const TeacherLessonsPage = lazy(() => import("../pages/teacher/TeacherLessonsPage"));
 
-const StudentAssignmentsPage = lazy(() => import("../pages/student/StudentAssignmentsPage"));
-const StudentAssignmentWorkPage = lazy(() => import("../pages/student/StudentAssignmentWorkPage"));
+const StudentAssessmentsPage = lazy(() => import("../pages/student/StudentAssessmentsPage"));
+const StudentAssessmentWorkPage = lazy(() => import("../pages/student/StudentAssessmentWorkPage"));
 const StudentJoinClassPage = lazy(() => import("../pages/student/StudentJoinClassPage"));
 const StudentLessonsPage = lazy(() => import("../pages/student/StudentLessonsPage"));
-const StudentVideosPage = lazy(() => import("../pages/student/StudentVideosPage"));
+const StudentInteractiveVideosPage = lazy(() => import("../pages/student/StudentInteractiveVideosPage"));
+const StudentInfographicsPage = lazy(() => import("../pages/student/StudentInfographicsPage"));
 const StudentClassesPage = lazy(() => import("../pages/student/StudentClassesPage"));
 const StudentClassDetailPage = lazy(() => import("../pages/student/StudentClassDetailPage"));
 const StudentDashboardPage = lazy(() => import("../pages/student/StudentDashboardPage"));
@@ -141,16 +145,21 @@ export default function AppRoutes() {
           <Route path="assignments" element={<TeacherAssignmentsPage />} />
           <Route path="assessments" element={<TeacherAssessmentsPage />} />
           <Route path="assessments/:assessmentId" element={<TeacherAssessmentsPage />} />
+          <Route path="distributions/:distributionId" element={<TeacherGradingPage />} />
+          <Route path="distributions/:distributionId/grade" element={<TeacherGradingPage />} />
           <Route path="assignments/new" element={<TeacherAssignmentsPage />} />
           <Route
             path="assignments/:assignmentId"
             element={<TeacherAssignmentDetailPage />}
           />
 
-          <Route path="videos" element={<TeacherVideosPage />} />
-          <Route path="videos/:videoId" element={<TeacherVideosPage />} />
+          <Route path="videos" element={<TeacherInteractiveVideosPage />} />
+          <Route path="videos/local" element={<TeacherVideosPage />} />
+          <Route path="videos/local/:videoId" element={<TeacherVideosPage />} />
+          <Route path="videos/:videoId" element={<TeacherInteractiveVideosPage />} />
 
-          <Route path="infographics" element={<TeacherInfographicsPage />} />
+          <Route path="infographics" element={<TeacherServerInfographicsPage />} />
+          <Route path="infographics/local" element={<TeacherInfographicsPage />} />
 
           <Route path="lessons" element={<TeacherLessonsPage />} />
         </Route>
@@ -175,15 +184,21 @@ export default function AppRoutes() {
         <Route path="lessons" element={<StudentLessonsPage />} />
 
         {/* Video */}
-        <Route path="videos" element={<StudentVideosPage />} />
+        <Route path="videos" element={<StudentInteractiveVideosPage />} />
+        <Route path="videos/local" element={<Navigate to="/student/videos" replace />} />
+        <Route path="videos/local/:videoId" element={<Navigate to="/student/videos" replace />} />
+        <Route path="infographics" element={<StudentInfographicsPage />} />
+        <Route path="videos/:publicationId" element={<StudentInteractiveVideosPage />} />
 
         {/* Danh sách bài tập */}
-        <Route path="assignments" element={<StudentAssignmentsPage />} />
+        <Route path="assessments" element={<StudentAssessmentsPage />} />
+        <Route path="assessments/:distributionId" element={<StudentAssessmentWorkPage />} />
+        <Route path="assignments" element={<Navigate to="/student/assessments" replace />} />
 
         {/* Chi tiết làm bài */}
         <Route
           path="assignments/:assignmentId"
-          element={<StudentAssignmentWorkPage />}
+          element={<Navigate to="/student/assessments" replace />}
         />
       </Route>
       </Route>
@@ -207,13 +222,13 @@ export default function AppRoutes() {
 
           <Route
             path="/demo/student/assignments"
-            element={<LegacyStudentRedirect to="/student/assignments" />}
+            element={<LegacyStudentRedirect to="/student/assessments" />}
           />
 
           <Route
             path="/demo/student/assignments/:assignmentId"
             element={
-              <LegacyStudentRedirect to="/student/assignments/:assignmentId" />
+              <LegacyStudentRedirect to="/student/assessments" />
             }
           />
         </>

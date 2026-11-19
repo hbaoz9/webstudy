@@ -122,7 +122,7 @@ describe("backend Excel roster import interaction", () => {
     await openValidPreview();
     await act(async () => { button("Nhập 1 học sinh").click(); });
     expect(importCalls(fetchMock)).toHaveLength(1);
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Import failed");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     expect(document.body.textContent).not.toContain("Đã nhập danh sách: thêm 1");
     await act(async () => { const confirm = button("Nhập 1 học sinh"); confirm.click(); confirm.click(); });
     expect(importCalls(fetchMock)).toHaveLength(2);

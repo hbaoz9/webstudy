@@ -29,7 +29,7 @@ let root: Root;
 let host: HTMLDivElement;
 
 function button(label: string): HTMLButtonElement {
-  const found = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === label);
+  const found = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === label || item.getAttribute("aria-label")?.startsWith(label));
   if (!found) throw new Error(`Button not found: ${label}`);
   return found;
 }
@@ -95,6 +95,17 @@ describe("classroom edit modal requests", () => {
     expect(document.querySelector("h1")?.textContent).toBe(initialClassroom.name);
   }
 
+  it("opens the Assessment entry with class context without creating a Distribution", async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === detailUrl && init?.method === "GET") return Promise.resolve(json({ data: classroom }));
+      throw new Error(`Unexpected request: ${init?.method} ${url}`);
+    });
+    await renderPage(fetchMock);
+    expect(host.querySelector<HTMLAnchorElement>('a[href="/teacher/assessments?classId=class-uuid"]')).not.toBeNull();
+    expect(host.textContent).toContain("Chưa thể giao bài");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("sends one PUT while pending, disables resubmission, and shows one confirmed update", async () => {
     let resolvePut: (response: Response) => void = () => {};
     const pendingPut = new Promise<Response>((resolve) => { resolvePut = resolve; });
@@ -150,7 +161,7 @@ describe("classroom edit modal requests", () => {
     await openModal();
     await changeDescription("Mô tả thử lại");
     await act(async () => { button("Lưu thay đổi").click(); });
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Lưu thất bại");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     expect(document.body.textContent).not.toContain("Đã lưu thông tin lớp học.");
     expect(putCalls(fetchMock)).toHaveLength(1);
 
@@ -239,7 +250,7 @@ describe("classroom edit modal requests", () => {
     await act(async () => { button("Lưu trữ lớp").click(); });
     await act(async () => { button("Xác nhận lưu trữ").click(); });
     expect(archiveCalls(fetchMock)).toHaveLength(1);
-    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(`Archive error ${status}`);
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(status === 500 ? "Máy chủ đang gặp sự cố" : `Archive error ${status}`);
     expect(document.querySelector("header")?.textContent).not.toContain("Đã lưu trữ");
     expect(document.body.textContent).not.toContain("Đã lưu trữ lớp học. Lịch sử lớp vẫn được giữ lại.");
   });

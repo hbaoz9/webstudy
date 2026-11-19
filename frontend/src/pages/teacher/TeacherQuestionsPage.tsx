@@ -1,5 +1,6 @@
 import { questionTypeLabels } from "../../types/question";
 import { QuestionImageView } from "../../components/questions/QuestionImage";
+import { IconAction } from "../../components/common/IconAction";
 import { lazy, Suspense, useRef, useState, useEffect } from "react";
 import { CircleHelp, Search, Plus, ChevronDown, CircleDot, ListChecks, ToggleLeft, ListTodo, ClipboardPlus, X, ImageIcon, FileUp, Hash, type LucideIcon } from "lucide-react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
@@ -562,13 +563,7 @@ export default function TeacherQuestionsPage() {
                 </h2>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setPreviewQuestion(null)}
-                className="rounded-lg px-3 py-2 text-sm font-bold text-secondary hover:bg-slate-100 hover:text-ink"
-              >
-                Đóng
-              </button>
+              <IconAction icon={X} label="Đóng xem trước câu hỏi" onClick={() => setPreviewQuestion(null)} />
             </div>
 
             <div className="p-5">

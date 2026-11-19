@@ -6,13 +6,13 @@ import {
   ClipboardList,
   Globe2,
   GraduationCap,
+  Image,
   LayoutDashboard,
   LogOut,
   Video,
   X,
 } from "lucide-react";
 
-import { useStudentAccount } from "../../contexts/StudentAccountContext";
 import { useAuth } from "../../contexts/AuthContext";
 
 type StudentSidebarProps = {
@@ -43,15 +43,19 @@ const navigationItems = [
     icon: Video,
   },
   {
-    label: "Bài tập",
-    path: "/student/assignments",
+    label: "Học liệu trực quan",
+    path: "/student/infographics",
+    icon: Image,
+  },
+  {
+    label: "Bài tập & Kiểm tra",
+    path: "/student/assessments",
     icon: ClipboardList,
   },
 ];
 
 export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarProps) {
-  const { student, hasStudentProfile } = useStudentAccount();
-  const { signOut, error } = useAuth();
+  const { session, signOut, error } = useAuth();
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -89,7 +93,7 @@ export function StudentSidebar({ isOpen, isDesktop, onClose }: StudentSidebarPro
     }
   };
 
-  const displayName = hasStudentProfile ? student.name : "Học sinh";
+  const displayName = session?.name || "Học sinh";
 
   return (
     <>

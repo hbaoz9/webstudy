@@ -1,19 +1,14 @@
 import { Menu } from "lucide-react";
 
-import { useStudentAccount } from "../../contexts/StudentAccountContext";
 
 type StudentTopbarProps = {
   onOpenSidebar: () => void;
 };
 
 export function StudentTopbar({ onOpenSidebar }: StudentTopbarProps) {
-  const { student, hasStudentProfile } = useStudentAccount();
-
-  const displayName = hasStudentProfile ? student.name : "bạn";
-
   return (
     <header className="sticky top-0 z-30 flex min-h-20 items-center justify-between gap-4 border-b border-line bg-white px-5 py-3 lg:px-8">
-      {/* Lời chào */}
+      {/* Tên khu vực học tập */}
       <div className="flex min-w-0 items-center gap-3">
         {/* Menu mobile */}
         <button
@@ -26,12 +21,12 @@ export function StudentTopbar({ onOpenSidebar }: StudentTopbarProps) {
         </button>
 
         <div className="min-w-0">
-          <h1 className="text-sm font-extrabold text-ink sm:text-lg">
-            Xin chào, {displayName} 👋
-          </h1>
+          <p className="text-sm font-extrabold text-ink sm:text-lg">
+            Không gian Địa lí
+          </p>
 
           <p className="mt-1 text-xs text-secondary">
-            Chào mừng bạn đến với không gian học tập!
+            Học, quan sát và khám phá
           </p>
         </div>
       </div>

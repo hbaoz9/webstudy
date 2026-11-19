@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarDays } from "lucide-react";
+import { GeographyArtwork } from "../../components/student/GeographyArtwork";
 import { getStudentClassroom, type ClassroomPreview } from "../../service/api/joinRequests";
 
 export default function StudentClassDetailPage() {
@@ -14,7 +15,7 @@ export default function StudentClassDetailPage() {
     let active = true;
     void getStudentClassroom(classId)
       .then((classroom) => { if (active) setResult({ id: classId, classroom }); })
-      .catch((cause) => { if (active) setResult({ id: classId, error: cause instanceof Error ? cause.message : "Không thể tải lớp học." }); });
+      .catch(() => { if (active) setResult({ id: classId, error: "Không thể tải lớp học. Vui lòng thử lại." }); });
     return () => { active = false; };
   }, [classId, revision]);
 
@@ -26,8 +27,10 @@ export default function StudentClassDetailPage() {
     {current?.error && <section role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
       {current.error} <button type="button" onClick={() => { setResult(null); setRevision((value) => value + 1); }} className="ml-2 font-bold underline">Thử lại</button>
     </section>}
-    {current?.classroom && <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-card">
-      <div className="h-48 bg-gradient-to-br from-slate-600 to-ink bg-cover bg-center sm:h-56" style={current.classroom.coverImage ? { backgroundImage: `url(${current.classroom.coverImage})` } : undefined} />
+    {current?.classroom && <section className="overflow-hidden rounded-3xl border border-line bg-white shadow-card">
+      <div className="relative flex h-48 items-center justify-center overflow-hidden bg-emerald/10 bg-cover bg-center sm:h-56" style={current.classroom.coverImage ? { backgroundImage: `url(${current.classroom.coverImage})` } : undefined}>
+        {!current.classroom.coverImage && <GeographyArtwork className="h-full max-w-full" />}
+      </div>
       <div className="p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -38,6 +41,14 @@ export default function StudentClassDetailPage() {
           {current.classroom.status === "archived" && <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-bold text-secondary">Lớp đã lưu trữ</span>}
         </div>
         <p className="mt-5 inline-flex items-center gap-2 text-sm text-secondary"><CalendarDays className="size-4" /> Năm học {current.classroom.academicYear}</p>
+        {current.classroom.status === "active" && <div className="mt-4 flex flex-wrap gap-3">
+          <Link to={`/student/assessments?classId=${encodeURIComponent(current.classroom.id)}`}
+            className="inline-flex min-h-11 items-center rounded-xl bg-emerald px-4 text-sm font-bold text-white">Bài tập & Kiểm tra của lớp</Link>
+          <Link to={`/student/videos?classId=${encodeURIComponent(current.classroom.id)}`}
+            className="inline-flex min-h-11 items-center rounded-xl border border-line px-4 text-sm font-bold">Video của lớp</Link>
+          <Link to={`/student/infographics?classId=${encodeURIComponent(current.classroom.id)}`}
+            className="inline-flex min-h-11 items-center rounded-xl border border-line px-4 text-sm font-bold">Học liệu trực quan</Link>
+        </div>}
       </div>
     </section>}
   </div>;

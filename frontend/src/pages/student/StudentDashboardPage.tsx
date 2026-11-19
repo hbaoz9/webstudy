@@ -1,240 +1,125 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, BookOpen, GraduationCap, PlayCircle, Clock3, CircleCheckBig } from "lucide-react";
-import { useStudentAccount } from "../../contexts/StudentAccountContext";
+import { ArrowRight, BookOpen, GraduationCap } from "lucide-react";
 import { RegistrationNotice } from "../../components/common/RegistrationNotice";
-import { useTeacherAssignments } from "../../contexts/TeacherAssignmentsContext";
+import { StudentNotificationsPanel } from "../../components/student/StudentNotificationsPanel";
+import { StudentAssessmentWidget } from "../../components/student/StudentAssessmentWidget";
+import { GeographyArtwork } from "../../components/student/GeographyArtwork";
+import { StudentEmptyState } from "../../components/student/StudentEmptyState";
 import { useAuth } from "../../contexts/AuthContext";
 import { getStudentActiveMemberships, getStudentJoinRequests, type ClassroomJoinRequest, type ClassroomMembership } from "../../service/api/joinRequests";
 import { getStudentLessons, type StudentLessonSummary } from "../../service/api/lessons";
-import { assignmentAnswerDraftKey, hasAssignmentDraftAnswers, loadAssignmentAnswerDraft } from "../../utils/assignmentQuestion";
 
-import { TEACHER_VIDEOS_KEY as VIDEOS_KEY, loadTeacherVideos as loadVideos, videoClassIds, TEACHER_VIDEOS_CHANGED } from "../../utils/teacherVideoStorage";
-
-function formatAssignmentDeadline(dueAt?: string) {
-  const date = new Date(dueAt ?? "");
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(date)
-    : "Chưa đặt hạn";
-}
-
-function formatTimeRemaining(milliseconds: number) {
-  const hours = Math.ceil(milliseconds / 3600000);
-  return hours < 24 ? `Còn ${hours} giờ` : `Còn ${Math.ceil(milliseconds / 86400000)} ngày`;
-}
+type ClassroomData = { memberships: ClassroomMembership[]; requests: ClassroomJoinRequest[] };
+type LessonResult = { key: string; data?: StudentLessonSummary[]; error?: string };
 
 export default function StudentDashboardPage() {
-  const { student, hasStudentProfile } = useStudentAccount();
-  const { session, status: authStatus } = useAuth();
-  const [classroomData, setClassroomData] = useState<{ memberships: ClassroomMembership[]; requests: ClassroomJoinRequest[] } | null>(null);
+  const { session, status } = useAuth();
+  return <DashboardSession key={`${status}:${session?.userId ?? "none"}`} name={session?.name ?? ""}
+    isStudent={status === "ready" && session?.role === "student"} />;
+}
+
+function DashboardSession({ name, isStudent }: { name: string; isStudent: boolean }) {
+  const [classroomData, setClassroomData] = useState<ClassroomData | null>(null);
   const [classroomError, setClassroomError] = useState("");
   const [classroomLoading, setClassroomLoading] = useState(true);
   const classroomGeneration = useRef(0);
-  const { assignments, submissions, submissionStorageStatus } = useTeacherAssignments();
-  const [now, setNow] = useState(() => Date.now());
-  const [storageRevision, setStorageRevision] = useState(0);
   const [lessonRevision, setLessonRevision] = useState(0);
-  const [lessonResult, setLessonResult] = useState<{
-    key: string; data?: StudentLessonSummary[]; error?: string;
-  } | null>(null);
-  const lessonKey = `${authStatus}:${session?.role ?? "none"}:${session?.userId ?? "none"}:${lessonRevision}`;
+  const [lessonResult, setLessonResult] = useState<LessonResult | null>(null);
+  const lessonKey = `${isStudent}:${lessonRevision}`;
   const currentLessons = lessonResult?.key === lessonKey ? lessonResult : null;
 
   useEffect(() => {
-    if (authStatus !== "ready" || session?.role !== "student") return;
+    if (!isStudent) return;
     let active = true;
-    void getStudentLessons()
-      .then((data) => { if (active) setLessonResult({ key: lessonKey, data }); })
+    void getStudentLessons().then(data => { if (active) setLessonResult({ key: lessonKey, data }); })
       .catch(() => { if (active) setLessonResult({ key: lessonKey, error: "Không thể tải bài học mới cập nhật. Vui lòng thử lại." }); });
     return () => { active = false; };
-  }, [authStatus, lessonKey, session?.role]);
+  }, [isStudent, lessonKey]);
 
   const loadClassroomData = useCallback(async () => {
+    if (!isStudent) return;
     const generation = ++classroomGeneration.current;
-    setClassroomLoading(true);
-    setClassroomError("");
+    setClassroomLoading(true); setClassroomError("");
     try {
       const memberships = await getStudentActiveMemberships();
-      // Join history explains an empty classroom state; active classes do not depend on it.
       const requests = memberships.length === 0 ? await getStudentJoinRequests() : [];
-      if (generation !== classroomGeneration.current) return;
-      setClassroomData({ memberships, requests });
-    } catch (cause) {
+      if (generation === classroomGeneration.current) setClassroomData({ memberships, requests });
+    } catch {
       if (generation === classroomGeneration.current) {
-        setClassroomData(null);
-        setClassroomError(cause instanceof Error ? cause.message : "Không thể tải thông tin lớp học.");
+        setClassroomData(null); setClassroomError("Không thể tải thông tin lớp học. Vui lòng thử lại.");
       }
     } finally {
       if (generation === classroomGeneration.current) setClassroomLoading(false);
     }
-  }, []);
+  }, [isStudent]);
+  useEffect(() => { void loadClassroomData(); return () => { classroomGeneration.current += 1; }; }, [loadClassroomData]);
 
-  useEffect(() => {
-    void loadClassroomData();
-    return () => { ++classroomGeneration.current; };
-  }, [loadClassroomData]);
-
-  // Timer renders reuse these reads. Returning to the tab refreshes local data.
-  const videos = useMemo(loadVideos, [storageRevision]);
-  const startedAssignments = useMemo(() => {
-    if (!hasStudentProfile) return {};
-    return Object.fromEntries(assignments
-      .filter((assignment) => assignment.status === "published" && !submissions.some((item) =>
-        item.assignmentId === assignment.id && item.studentId === student.id,
-      ))
-      .map((assignment) => {
-        const draft = loadAssignmentAnswerDraft(assignment, student.id);
-        return [assignment.id, draft.status === "restored" && hasAssignmentDraftAnswers(draft.answers)];
-      }));
-  }, [assignments, submissions, student.id, hasStudentProfile, storageRevision]);
-
-  useEffect(() => {
-    const refreshLocalData = () => {
-      setStorageRevision((revision) => revision + 1);
-      setNow(Date.now());
-    };
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") refreshLocalData();
-    };
-    const refreshChangedStorage = (event: StorageEvent) => {
-      if (event.key === null || event.key === VIDEOS_KEY ||
-          event.key.startsWith(assignmentAnswerDraftKey("", student.id))) {
-        refreshLocalData();
-      }
-    };
-    window.addEventListener(TEACHER_VIDEOS_CHANGED, refreshLocalData);
-    window.addEventListener("focus", refreshLocalData);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("storage", refreshChangedStorage);
-    return () => {
-      window.removeEventListener(TEACHER_VIDEOS_CHANGED, refreshLocalData);
-      window.removeEventListener("focus", refreshLocalData);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("storage", refreshChangedStorage);
-    };
-  }, [student.id]);
-  const activeMemberships = classroomData?.memberships.filter(({ status }) => status === "active") ?? [];
+  const activeMemberships = classroomData?.memberships.filter(item => item.status === "active") ?? [];
   const latestRequest = classroomData?.requests[0];
   const pendingRequest = latestRequest?.status === "pending";
   const approvedWithoutMembership = activeMemberships.length === 0 && latestRequest?.status === "approved";
-  const activeClassIds = new Set(activeMemberships.map(({ classroom }) => classroom.id));
-  const visibleAssignments = assignments.filter((assignment) =>
-    hasStudentProfile && assignment.status === "published" && activeClassIds.has(assignment.classroomId),
-  );
-  const rows = visibleAssignments.map((assignment) => {
-    const submission = submissions.find((item) =>
-      item.assignmentId === assignment.id && item.studentId === student.id,
-    );
-    const deadline = Date.parse(assignment.dueAt ?? "");
-    const unavailable = !Number.isFinite(deadline) || assignment.questions.length === 0;
-    const expired = !unavailable && deadline <= now;
-    return { assignment, submission, deadline, unavailable, expired };
-  });
-  const pendingRows = rows
-    .filter((row) => !row.submission && !row.unavailable && !row.expired)
-    .sort((a, b) => a.deadline - b.deadline);
-  const submittedCount = rows.filter((row) => row.submission).length;
-  const expiredCount = rows.filter((row) => !row.submission && row.expired).length;
-  const unavailableCount = rows.filter((row) => !row.submission && row.unavailable).length;
-  const hasUpcomingDeadline = pendingRows.length > 0;
-
-  useEffect(() => {
-    if (!hasUpcomingDeadline) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [hasUpcomingDeadline]);
-
   const recentLessons = (currentLessons?.data ?? []).slice().sort((a, b) => {
     const first = Date.parse(a.publishedAt ?? "");
     const second = Date.parse(b.publishedAt ?? "");
     return (Number.isFinite(second) ? second : -Infinity) - (Number.isFinite(first) ? first : -Infinity)
       || a.number - b.number || a.id.localeCompare(b.id);
   }).slice(0, 3);
-  const visibleVideos = videos.filter((video) =>
-    video.status === "published" && videoClassIds(video).some((id) => activeClassIds.has(id)),
-  );
-  // Learning panels still use prototype storage and cannot represent Laravel classroom progress.
-  const learningIntegrationAvailable = false;
 
-  return (
-    <div className="mx-auto min-w-0 max-w-6xl space-y-7 [overflow-wrap:anywhere]">
-      <RegistrationNotice role="student" />
-      <header className="rounded-3xl bg-ink p-6 text-white shadow-card sm:p-8">
-        <p className="text-sm font-semibold text-emerald">WebStudy · Địa lí 10</p>
-        <h1 className="mt-3 text-2xl font-extrabold sm:text-3xl">{session?.name ? `Chào ${session.name} 👋` : "Chào bạn 👋"}</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-300">Theo dõi lớp học của bạn.</p>
-        {!classroomLoading && !classroomError && activeMemberships.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-          {activeMemberships.map(({ classroom }) => <Link key={classroom.id} to={`/student/classes/${classroom.id}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 px-4 hover:bg-white/10"><GraduationCap className="size-4 shrink-0" />{classroom.name}<ArrowRight className="size-4 shrink-0" /></Link>)}
-        </div>}
-      </header>
-
-      {classroomLoading ? <section role="status" className="rounded-2xl border border-line bg-white p-6 text-sm text-secondary">Đang tải lớp học của bạn…</section>
+  return <main className="mx-auto min-w-0 max-w-6xl space-y-7 [overflow-wrap:anywhere]">
+    <RegistrationNotice role="student" />
+    <header className="relative isolate overflow-hidden rounded-[2rem] border border-emerald/15 bg-white px-6 py-8 shadow-card sm:px-10 sm:py-10">
+      <div aria-hidden="true" className="absolute inset-y-0 right-0 -z-10 w-2/3 bg-[radial-gradient(circle_at_70%_35%,#dff4e9,transparent_65%)]" />
+      <GeographyArtwork className="pointer-events-none absolute -right-16 top-1/2 -z-10 hidden w-[380px] -translate-y-1/2 opacity-90 sm:block lg:right-0" />
+      <div className="max-w-xl">
+        <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-emerald">Khám phá Địa lí 10</p>
+        <h1 className="mt-4 text-3xl font-extrabold leading-tight text-ink sm:text-4xl">{name ? `Chào ${name}!` : "Chào bạn!"}</h1>
+        <p className="mt-3 text-base leading-7 text-secondary">Mỗi bài học là một góc nhìn mới về thế giới quanh mình.</p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link to={recentLessons[0] ? `/student/lessons?lesson=${encodeURIComponent(recentLessons[0].id)}` : "/student/lessons"}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald px-5 py-2 text-sm font-bold text-white hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald">
+            {recentLessons[0] ? "Mở bài học mới" : "Khám phá bài học"}<ArrowRight className="size-4" />
+          </Link>
+          <Link to="/student/assessments" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-white px-5 py-2 text-sm font-bold text-ink hover:border-emerald/50">Bài cần làm</Link>
+        </div>
+      </div>
+    </header>
+    <StudentAssessmentWidget />
+    <StudentNotificationsPanel />
+    {classroomLoading ? <section role="status" className="rounded-2xl border border-line bg-white p-6 text-sm text-secondary">Đang tải lớp học của bạn…</section>
       : classroomError ? <section role="alert" className="rounded-2xl border border-line bg-white p-6">
         <h2 className="text-xl font-extrabold text-ink">Không thể tải lớp học</h2>
         <p className="mt-2 text-sm text-red-600">{classroomError}</p>
         <button type="button" onClick={() => void loadClassroomData()} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-emerald px-5 text-sm font-bold text-white">Thử lại</button>
-      </section>
-      : activeMemberships.length === 0 ? <section className="rounded-2xl border border-dashed border-line bg-white p-6">
-        <h2 className="text-xl font-extrabold text-ink">{pendingRequest ? "Đang chờ tham gia lớp" : "Bạn chưa tham gia lớp học nào"}</h2>
-        <p className="mt-2 text-sm leading-6 text-secondary">{pendingRequest ? "Yêu cầu tham gia đang chờ giáo viên xử lý. Xem trạng thái trong lịch sử yêu cầu." : approvedWithoutMembership ? "Yêu cầu trước đây đã được duyệt, nhưng hiện bạn không có lớp đang tham gia. Xem lịch sử yêu cầu để biết thêm chi tiết." : "Có mã lớp từ giáo viên? Hãy nhập mã để tham gia."}</p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Link to="/student/join-class" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald px-5 text-sm font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald">{pendingRequest || approvedWithoutMembership ? "Xem lịch sử yêu cầu" : "Nhập mã lớp"}<ArrowRight className="size-4" /></Link>
-        </div>
-      </section> : learningIntegrationAvailable ? <>
-        <section aria-labelledby="student-todo-heading" className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div><h2 id="student-todo-heading" className="text-xl font-extrabold text-ink">Việc cần làm</h2><p className="mt-1 text-sm text-secondary">Bài chưa nộp, ưu tiên hạn gần nhất.</p></div>
-            <Link to="/student/assignments" className="inline-flex min-h-11 items-center text-sm font-bold text-emerald">Xem tất cả bài tập →</Link>
-          </div>
-          {pendingRows.length === 0 ? <div className="flex items-center gap-3 rounded-2xl border border-line bg-white p-5"><CircleCheckBig className="size-6 shrink-0 text-emerald" /><div><p className="font-bold text-ink">Không có bài đang mở cần làm</p><p className="mt-1 text-sm text-secondary">{expiredCount + unavailableCount > 0 ? "Vẫn còn bài hết hạn hoặc chưa khả dụng. Xem danh sách bài tập để kiểm tra." : "Bạn chưa có bài cần nộp trong các lớp đang học."}</p></div></div> : pendingRows.slice(0, 3).map(({ assignment, deadline }) => {
-            const urgent = deadline - now <= 86400000;
-            const started = startedAssignments[assignment.id];
-            return <article key={assignment.id} className="flex flex-col gap-4 rounded-2xl border border-line bg-white p-5 shadow-card sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 gap-3"><Clock3 className={`mt-1 size-5 shrink-0 ${urgent ? "text-amber" : "text-emerald"}`} /><div className="min-w-0">
-                <h3 className="font-extrabold text-ink">{assignment.title}</h3>
-                <p className="mt-1 text-sm text-secondary">{activeMemberships.find(({ classroom }) => classroom.id === assignment.classroomId)?.classroom.name}</p>
-                <p className="mt-2 text-xs text-secondary">Hạn nộp: {formatAssignmentDeadline(assignment.dueAt)}</p>
-                <p className={`mt-1 text-xs font-bold ${urgent ? "text-amber" : "text-emerald"}`}>{urgent ? "Sắp hết hạn · " : ""}{formatTimeRemaining(deadline - now)}</p>
-              </div></div>
-              <Link to={`/student/assignments/${assignment.id}`} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald px-5 text-sm font-bold text-white">{started ? "Tiếp tục làm" : "Làm bài"}<ArrowRight className="size-4" /></Link>
-            </article>;
-          })}
-        </section>
-        <section aria-labelledby="student-progress-heading" className="rounded-2xl border border-line bg-white p-5">
-          <h2 id="student-progress-heading" className="text-xl font-extrabold text-ink">Tiến độ nộp bài</h2>
-          <p className="mt-2 text-sm text-secondary">{submittedCount}/{rows.length} bài có bài nộp trong lớp đang học.</p>
-          {rows.length > 0 && <div role="progressbar" aria-label="Tỷ lệ bài có bài nộp" aria-valuemin={0} aria-valuemax={rows.length} aria-valuenow={submittedCount} className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald" style={{ width: `${submittedCount / rows.length * 100}%` }} /></div>}
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm"><span className="text-secondary">{pendingRows.length} bài cần làm</span><span className={expiredCount > 0 ? "text-red-600" : "text-secondary"}>{expiredCount} bài hết hạn chưa nộp</span>{unavailableCount > 0 && <span className="text-secondary">{unavailableCount} bài chưa khả dụng</span>}</div>
-          {submissionStorageStatus !== "saved" && <p role="status" className="mt-3 text-sm text-red-600">{submissionStorageStatus === "error" ? "Bài nộp chưa lưu được trên trình duyệt. Mở bài đã nộp để thử lưu lại trước khi đóng trang." : "Đang lưu bài nộp…"}</p>}
-        </section>
-        <Link to="/student/videos" className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-white p-5 hover:bg-slate-50"><PlayCircle className="size-6 shrink-0 text-emerald" /><div className="min-w-0"><p className="font-bold text-ink">Video tương tác</p><p className="mt-1 text-sm text-secondary">{visibleVideos.length > 0 ? `${visibleVideos.length} video đang khả dụng trong lớp đang học` : "Chưa có video được giao trong lớp đang học"}</p></div><ArrowRight className="ml-auto size-5 shrink-0 text-emerald" /></Link>
-      </> : <section className="rounded-2xl border border-line bg-white p-6 shadow-card">
-        <div className="flex items-start gap-3"><BookOpen className="mt-1 size-6 shrink-0 text-emerald" /><div>
-          <h2 className="text-xl font-extrabold text-ink">Lớp học của bạn</h2>
-          <p className="mt-2 text-sm leading-6 text-secondary">Bạn đang tham gia {activeMemberships.length} lớp. Nội dung học tập và tiến độ chưa được đồng bộ với lớp học này.</p>
-          <Link to="/student/classes" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-emerald">Xem lớp học của tôi <ArrowRight className="size-4" /></Link>
-        </div></div>
+      </section> : activeMemberships.length === 0 ? <StudentEmptyState
+        title={pendingRequest ? "Đang chờ tham gia lớp" : "Bạn chưa tham gia lớp học nào"}
+        description={pendingRequest ? "Yêu cầu tham gia đang chờ giáo viên xử lý. Xem trạng thái trong lịch sử yêu cầu."
+          : approvedWithoutMembership ? "Yêu cầu trước đây đã được duyệt, nhưng hiện bạn không có lớp đang tham gia. Xem lịch sử yêu cầu để biết thêm chi tiết."
+            : "Có mã lớp từ giáo viên? Hãy nhập mã để tham gia."}
+        to="/student/join-class" action={pendingRequest || approvedWithoutMembership ? "Xem lịch sử yêu cầu" : "Nhập mã lớp"}
+      /> : <section className="rounded-3xl border border-line bg-white p-6 shadow-card sm:flex sm:items-center sm:justify-between sm:gap-5">
+        <div><span className="inline-grid size-11 place-items-center rounded-2xl bg-emerald/10 text-emerald"><GraduationCap className="size-5" /></span>
+        <h2 className="mt-3 text-xl font-extrabold text-ink">Lớp học của tôi</h2>
+        <p className="mt-2 text-sm text-secondary">Bạn đang tham gia {activeMemberships.length} lớp. Xem bài học và bài được giao theo từng lớp.</p>
+        <div className="mt-3 flex flex-wrap gap-2">{activeMemberships.map(({ classroom }) => <Link key={classroom.id} to={`/student/classes/${encodeURIComponent(classroom.id)}`} className="inline-flex min-h-11 items-center rounded-xl border border-line px-3 text-sm font-bold text-ink hover:border-emerald/40">{classroom.name}</Link>)}</div>
+        </div><Link to="/student/classes" className="mt-4 inline-flex min-h-11 shrink-0 items-center gap-2 text-sm font-bold text-emerald sm:mt-0">Xem lớp học <ArrowRight className="size-4" /></Link>
       </section>}
-      <section className="space-y-3" aria-labelledby="student-recent-lessons-heading">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="student-recent-lessons-heading" className="text-xl font-extrabold text-ink">Bài học mới cập nhật</h2>
-          <Link to="/student/lessons" className="inline-flex min-h-11 items-center text-sm font-bold text-emerald">Xem tất cả bài học →</Link>
-        </div>
-        {!currentLessons ? (
-          <p role="status" className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Đang tải bài học mới cập nhật...</p>
-        ) : currentLessons.error ? (
-          <div role="alert" className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">
-            <p>{currentLessons.error}</p>
-            <button type="button" onClick={() => setLessonRevision((value) => value + 1)} className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-emerald px-4 text-sm font-bold text-emerald">Thử lại bài học</button>
-          </div>
-        ) : recentLessons.length === 0 ? (
-          <p className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Chưa có bài học được đăng cho lớp của bạn.</p>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-3">
-            {recentLessons.map((lesson) => <Link key={lesson.id} to={`/student/lessons?lesson=${encodeURIComponent(lesson.id)}`} className="min-w-0 rounded-2xl border border-line bg-white p-5 hover:bg-slate-50"><BookOpen className="size-5 text-emerald" /><h3 className="mt-3 font-bold text-ink">Bài {lesson.number}: {lesson.title}</h3><p className="mt-2 text-sm font-bold text-emerald">Mở bài học →</p></Link>)}
-          </div>
-        )}
-      </section>
-    </div>
-  );
+    <section className="space-y-3" aria-labelledby="student-recent-lessons-heading">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="student-recent-lessons-heading" className="text-xl font-extrabold text-ink">Bài học mới cập nhật</h2>
+        <Link to="/student/lessons" className="inline-flex min-h-11 items-center text-sm font-bold text-emerald">Xem tất cả bài học →</Link>
+      </div>
+      {!currentLessons ? <p role="status" className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">Đang tải bài học mới cập nhật...</p>
+        : currentLessons.error ? <div role="alert" className="rounded-2xl border border-line bg-white p-5 text-sm text-secondary">
+          <p>{currentLessons.error}</p>
+          <button type="button" onClick={() => setLessonRevision(value => value + 1)} className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-emerald px-4 text-sm font-bold text-emerald">Thử lại bài học</button>
+        </div> : recentLessons.length === 0 ? <StudentEmptyState title="Chưa có bài học được đăng cho lớp của bạn" description="Khi giáo viên chia sẻ bài mới, bạn sẽ tìm thấy bài học tại đây." to="/student/lessons" action="Xem danh sách bài học" />
+          : <div className="grid gap-3 md:grid-cols-3">{recentLessons.map(lesson => <Link key={lesson.id}
+            to={`/student/lessons?lesson=${encodeURIComponent(lesson.id)}`} className="group min-w-0 rounded-3xl border border-line bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:border-emerald/40 motion-reduce:transform-none">
+            <span className="inline-grid size-10 place-items-center rounded-xl bg-emerald/10"><BookOpen className="size-5 text-emerald" /></span><h3 className="mt-4 font-bold text-ink">Bài {lesson.number}: {lesson.title}</h3>
+            <p className="mt-1 text-xs text-secondary">{lesson.chapterTitle}</p>
+            <p className="mt-2 text-sm font-bold text-emerald">Mở bài học →</p>
+          </Link>)}</div>}
+    </section>
+  </main>;
 }

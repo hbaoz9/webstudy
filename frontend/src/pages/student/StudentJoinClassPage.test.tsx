@@ -129,7 +129,7 @@ describe("Student join with Laravel API mock", () => {
     });
     vi.stubGlobal("fetch", mock);
     await renderStudent();
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("offline");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     await act(async () => { button("Thử lại").click(); });
     await lookup("BADCODE");
     expect(document.body.textContent).toContain("Không tìm thấy lớp đang hoạt động");

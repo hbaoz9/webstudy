@@ -307,7 +307,7 @@ describe("teacher roster read interactions", () => {
     await act(async () => { button("Nhập 1 học sinh").click(); });
     expect(imports(mock)).toHaveLength(1);
     expect(rosterGets(mock)).toHaveLength(1);
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Import failed");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Máy chủ đang gặp sự cố");
     expect(document.querySelector("tbody")?.textContent).toContain("SERVER-ROW");
     expect(document.body.textContent).not.toContain("Đã nhập danh sách: thêm");
   });
